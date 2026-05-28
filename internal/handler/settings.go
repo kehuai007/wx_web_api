@@ -24,7 +24,7 @@ func (h *SettingsHandler) GetConfig(c *gin.Context) {
 	cfg := config.Get()
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
-		data: ConfigData{
+		"data": ConfigData{
 			ApiBaseUrl: cfg.ApiBaseUrl,
 			Tokens:     cfg.Tokens,
 			Port:       cfg.Port,
