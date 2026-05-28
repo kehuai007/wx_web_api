@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>微信视频解析 - wx_web_api</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>微信视频解析</h1>
+    <p class="subtitle">解析微信视频分享链接，提取媒体信息</p>
+
+    <div id="loginView" class="login-view active">
+      <div class="form-group">
+        <label>管理密码</label>
+        <input type="password" id="pwd" placeholder="请输入管理密码" />
+      </div>
+      <input type="hidden" id="challenge" />
+      <div class="form-group">
+        <label>响应 (challenge)</label>
+        <input type="text" id="response" placeholder="自动计算，无需输入" readonly />
+      </div>
+      <button id="loginBtn">登录</button>
+      <p id="loginError" class="error"></p>
+    </div>
+
+    <div id="mainView" class="main-view">
+      <div class="form-group">
+        <label>微信视频分享链接</label>
+        <input type="text" id="urlInput" placeholder="https://channels.weixin.qq.com/platform/..." />
+      </div>
+      <button id="parseBtn">解析</button>
+      <p id="parseError" class="error"></p>
+      <p id="loading">解析中...</p>
+      <div id="resultDiv" class="result">
+        <div class="result-item">
+          <div class="result-label">作者</div>
+          <div class="result-value" id="resAuthor">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">标题</div>
+          <div class="result-value" id="resTitle">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">封面</div>
+          <div class="result-value" id="resCover">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">视频URL</div>
+          <div class="result-value" id="resVideo">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">解码Key</div>
+          <div class="result-value" id="resDecodeKey">-</div>
+        </div>
+        <div class="result-item">
+          <div class="result-label">媒体类型</div>
+          <div class="result-value" id="resMediaType">-</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
