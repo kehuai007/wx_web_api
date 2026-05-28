@@ -1,66 +1,139 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>微信视频解析 - wx_web_api</title>
-  <link rel="stylesheet" href="/static/style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微信视频解析 - wx_web_api</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f14;
+            color: #fff;
+            min-height: 100vh;
+        }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding: 16px 20px;
+            background: #1a1a24;
+            border-radius: 12px;
+        }
+        .header h1 { font-size: 20px; font-weight: 600; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-green { background: #22c55e; color: #fff; }
+        .btn-green:hover { background: #16a34a; }
+        .btn-red { background: #dc2626; color: #fff; }
+        .btn-red:hover { background: #b91c1c; }
+        .btn-gray { background: #333; color: #aaa; }
+        .btn-gray:hover { background: #444; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .card {
+            background: #1a1a24;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .card-title { font-size: 14px; font-weight: 500; margin-bottom: 16px; color: #888; }
+        .form-group { margin-bottom: 12px; }
+        .form-group:last-child { margin-bottom: 0; }
+        label { display: block; color: #888; font-size: 12px; margin-bottom: 6px; }
+        input[type="text"], input[type="password"] {
+            width: 100%;
+            background: #0f0f14;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+        }
+        input:focus { border-color: #3b82f6; }
+        .token-list { margin-top: 12px; }
+        .token-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: #0f0f14;
+            border-radius: 6px;
+            margin-bottom: 6px;
+        }
+        .token-item code {
+            font-family: monospace;
+            font-size: 12px;
+            color: #22c55e;
+            word-break: break-all;
+        }
+        .token-empty { color: #555; font-size: 13px; text-align: center; padding: 20px; }
+        .error { color: #dc2626; font-size: 13px; margin-top: 8px; display: none; }
+        .error.show { display: block; }
+        .success { color: #22c55e; font-size: 13px; margin-top: 8px; display: none; }
+        .success.show { display: block; }
+    </style>
 </head>
 <body>
-  <div class="container">
-    <h1>微信视频解析</h1>
-    <p class="subtitle">解析微信视频分享链接，提取媒体信息</p>
-
-    <div id="loginView" class="login-view active">
-      <div class="form-group">
-        <label>管理密码</label>
-        <input type="password" id="pwd" placeholder="请输入管理密码" />
-      </div>
-      <input type="hidden" id="challenge" />
-      <div class="form-group">
-        <label>响应 (challenge)</label>
-        <input type="text" id="response" placeholder="自动计算，无需输入" readonly />
-      </div>
-      <button id="loginBtn">登录</button>
-      <p id="loginError" class="error"></p>
+    <div id="loginScreen" style="display:none; position:fixed;top:0;left:0;width:100%;height:100%;background:#0f0f14;z-index:9999;justify-content:center;align-items:center;">
+        <div style="text-align:center;">
+            <h2 style="color:#fff;margin-bottom:20px;">请输入访问密码</h2>
+            <input type="password" id="loginPwd" placeholder="密码" onkeyup="if(event.key==='Enter')doLogin()" style="background:#1a1a24;border:1px solid #333;border-radius:8px;padding:12px 16px;color:#fff;font-size:14px;outline:none;width:200px;text-align:center;" />
+            <button onclick="doLogin()" style="display:block;margin-top:12px;width:224px;padding:12px;background:#22c55e;border:none;border-radius:8px;color:#fff;font-size:14px;cursor:pointer;">登录</button>
+            <p id="loginError" style="color:#dc2626;margin-top:12px;font-size:13px;display:none;"></p>
+        </div>
     </div>
 
-    <div id="mainView" class="main-view">
-      <div class="form-group">
-        <label>微信视频分享链接</label>
-        <input type="text" id="urlInput" placeholder="https://channels.weixin.qq.com/platform/..." />
-      </div>
-      <button id="parseBtn">解析</button>
-      <p id="parseError" class="error"></p>
-      <p id="loading">解析中...</p>
-      <div id="resultDiv" class="result">
-        <div class="result-item">
-          <div class="result-label">作者</div>
-          <div class="result-value" id="resAuthor">-</div>
+    <div class="container" id="mainContainer" style="display:none;">
+        <div class="header">
+            <h1>微信视频解析</h1>
+            <button class="btn btn-red" onclick="doLogout()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+                退出
+            </button>
         </div>
-        <div class="result-item">
-          <div class="result-label">标题</div>
-          <div class="result-value" id="resTitle">-</div>
+
+        <div class="card">
+            <div class="card-title">API 地址</div>
+            <div class="form-group">
+                <label>后端 API 地址</label>
+                <input type="text" id="apiBaseUrl" placeholder="http://127.0.0.1:2022" />
+            </div>
         </div>
-        <div class="result-item">
-          <div class="result-label">封面</div>
-          <div class="result-value" id="resCover">-</div>
+
+        <div class="card">
+            <div class="card-title">认证 Token</div>
+            <div class="form-group">
+                <label>新增 Token</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="newToken" placeholder="输入新token" onkeyup="if(event.key==='Enter')addToken()" />
+                    <button class="btn btn-green btn-sm" onclick="addToken()">添加</button>
+                </div>
+            </div>
+            <div id="tokenList" class="token-list"></div>
         </div>
-        <div class="result-item">
-          <div class="result-label">视频URL</div>
-          <div class="result-value" id="resVideo">-</div>
+
+        <div id="msgError" class="error"></div>
+        <div id="msgSuccess" class="success"></div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+            <button class="btn btn-gray" onclick="loadConfig()">重置</button>
+            <button class="btn btn-green" onclick="saveConfig()">保存配置</button>
         </div>
-        <div class="result-item">
-          <div class="result-label">解码Key</div>
-          <div class="result-value" id="resDecodeKey">-</div>
-        </div>
-        <div class="result-item">
-          <div class="result-label">媒体类型</div>
-          <div class="result-value" id="resMediaType">-</div>
-        </div>
-      </div>
     </div>
-  </div>
-  <script src="/static/app.js"></script>
+
+    <script src="/static/app.js?v=4"></script>
 </body>
 </html>

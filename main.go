@@ -92,7 +92,7 @@ func main() {
 
     r.GET("/static/*filepath", func(c *gin.Context) {
         fp := c.Param("filepath")
-        content, err := getFileContent(fp)
+        content, err := getFileContent("static" + fp)
         if err != nil {
             c.String(404, "Not found")
             return

@@ -17,7 +17,6 @@ func NewSettingsHandler() *SettingsHandler {
 type ConfigData struct {
 	ApiBaseUrl string   `json:"api_base_url"`
 	Tokens     []string `json:"tokens"`
-	Port       int      `json:"port"`
 }
 
 func (h *SettingsHandler) GetConfig(c *gin.Context) {
@@ -27,7 +26,6 @@ func (h *SettingsHandler) GetConfig(c *gin.Context) {
 		"data": ConfigData{
 			ApiBaseUrl: cfg.ApiBaseUrl,
 			Tokens:     cfg.Tokens,
-			Port:       cfg.Port,
 		},
 	})
 }
@@ -35,7 +33,6 @@ func (h *SettingsHandler) GetConfig(c *gin.Context) {
 type UpdateConfigRequest struct {
 	ApiBaseUrl string   `json:"api_base_url"`
 	Tokens     []string `json:"tokens"`
-	Port       int      `json:"port"`
 }
 
 func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
@@ -44,10 +41,12 @@ func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
 		c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "invalid request"})
 		return
 	}
-	cfg := &config.Config{
-		ApiBaseUrl: req.ApiBaseUrl,
-		Tokens:     req.Tokens,
-		Port:       req.Port,
+	cfg := config.Get()
+	if req.ApiBaseUrl != "" {
+		cfg.ApiBaseUrl = req.ApiBaseUrl
+	}
+	if req.Tokens != nil {
+		cfg.Tokens = req.Tokens
 	}
 	if err := config.Save(cfg); err != nil {
 		c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: err.Error()})

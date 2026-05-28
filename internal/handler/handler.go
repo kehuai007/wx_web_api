@@ -2,8 +2,8 @@ package handler
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"wx_web_api/internal/config"
@@ -97,8 +97,8 @@ func (h *Handler) Login(c *gin.Context) {
 		c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "missing parameters"})
 		return
 	}
-	// Verify: SHA256(pwd + challenge) == response
-	expected := sha256hex(h.pwd + req.Challenge)
+	// Verify: simpleHash(pwd + challenge) == response
+	expected := simpleHash(h.pwd + req.Challenge)
 	if expected != req.Response {
 		c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "invalid password"})
 		return
@@ -125,9 +125,13 @@ func (h *Handler) ParseWxURL(c *gin.Context) {
 	c.JSON(http.StatusOK, model.WxParseResponse{Code: 0, Msg: "success", Data: data})
 }
 
-func sha256hex(data string) string {
-	h := sha256.Sum256([]byte(data))
-	return hex.EncodeToString(h[:])
+func simpleHash(data string) string {
+	h := uint64(0)
+	primes := []uint64{31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79}
+	for i, c := range data {
+		h += uint64(c) * primes[(i+1)%12]
+	}
+	return fmt.Sprintf("%016x", h)
 }
 
 func generateToken() string {
