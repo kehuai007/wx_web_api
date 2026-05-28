@@ -1,0 +1,4 @@
+wx_web_api.exe
+*.db
+*.log
+.env
