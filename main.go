@@ -114,6 +114,9 @@ func main() {
     // External API: POST /wx (token-authenticated)
     r.POST("/wx", h.TokenAuth(), h.ParseWxURL)
 
+    // External API: POST /wx/finder (token-authenticated)
+    r.POST("/wx/finder", h.TokenAuth(), h.ParseFinderFeedByObjectID)
+
     log.Printf("wx_web_api starting on :%d (build: %s)", effectivePort, buildTag)
     if err := r.Run(fmt.Sprintf(":%d", effectivePort)); err != nil {
         log.Fatal(err)

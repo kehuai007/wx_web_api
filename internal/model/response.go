@@ -4,6 +4,13 @@ type WxParseRequest struct {
     URL string `json:"url" binding:"required"`
 }
 
+type FinderFeedRequest struct {
+    ObjectID      string `json:"objectId"`
+    ObjectNonceID string `json:"objectNonceId"`
+    Nickname      string `json:"nickname"`
+    Desc          string `json:"desc"`
+}
+
 type WxParseData struct {
     Author    string `json:"author"`
     Title     string `json:"title"`

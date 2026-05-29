@@ -125,6 +125,28 @@ func (h *Handler) ParseWxURL(c *gin.Context) {
 	c.JSON(http.StatusOK, model.WxParseResponse{Code: 0, Msg: "success", Data: data})
 }
 
+// ParseFinderFeedByObjectID 通过 objectID/objectNonceID 解析视频信息
+func (h *Handler) ParseFinderFeedByObjectID(c *gin.Context) {
+	var req model.FinderFeedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, model.WxParseResponse{Code: 1, Msg: "objectId and objectNonceId are required"})
+		return
+	}
+
+	if req.ObjectID == "" || req.ObjectNonceID == "" {
+		c.JSON(http.StatusOK, model.WxParseResponse{Code: 1, Msg: "objectId and objectNonceId are required"})
+		return
+	}
+
+	data, err := h.parser.ParseFinderFeedByObjectID(req.ObjectID, req.ObjectNonceID)
+	if err != nil {
+		c.JSON(http.StatusOK, model.WxParseResponse{Code: 1, Msg: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, model.WxParseResponse{Code: 0, Msg: "success", Data: data})
+}
+
 func simpleHash(data string) string {
 	h := uint64(0)
 	primes := []uint64{31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79}
