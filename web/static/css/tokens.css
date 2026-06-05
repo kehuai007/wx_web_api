@@ -22,7 +22,8 @@
   --accent:  #a855f7;
   --success: #22c55e;
   --warning: #f59e0b;
-  --danger:  #ef4444;
+  --danger:      #ef4444;
+  --danger-hover: #dc2626;
 
   /* Gradients */
   --gradient-primary: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
@@ -31,6 +32,7 @@
   /* Overlays */
   --surface-glass: rgba(20, 20, 29, 0.7);
   --scrim:        rgba(0, 0, 0, 0.5);
+  --scrim-strong: rgba(0, 0, 0, 0.6);
 
   /* Radius */
   --r-sm: 6px;
