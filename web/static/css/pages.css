@@ -1,0 +1,75 @@
+/* Page-specific styles */
+
+/* Settings page */
+.settings-actions {
+  display: flex;
+  gap: var(--s-3);
+  justify-content: flex-end;
+  margin-top: var(--s-5);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--border);
+}
+
+.token-list { display: flex; flex-direction: column; gap: var(--s-2); }
+.token-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+}
+.token-item__value { flex: 1; word-break: break-all; color: var(--success); }
+.token-item__value--masked { color: var(--text-muted); user-select: none; }
+.token-item__count {
+  font-size: var(--t-sm);
+  color: var(--text-muted);
+  margin-top: var(--s-3);
+}
+
+/* Login overlay */
+.login {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  background-image: var(--gradient-glow);
+  z-index: 9999;
+  animation: fadeIn var(--dur-base) var(--ease);
+}
+.login__card {
+  width: min(360px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: var(--s-7) var(--s-6);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.login__logo {
+  width: 56px; height: 56px;
+  border-radius: var(--r-lg);
+  background: var(--gradient-primary);
+  box-shadow: var(--shadow-glow);
+  margin: 0 auto var(--s-4);
+}
+.login__title { font-size: var(--t-xl); font-weight: 600; margin-bottom: var(--s-2); }
+.login__subtitle { color: var(--text-muted); font-size: var(--t-sm); margin-bottom: var(--s-5); }
+.login__form { display: flex; flex-direction: column; gap: var(--s-3); }
+.login__error { color: var(--danger); font-size: var(--t-sm); min-height: 1.2em; margin-top: var(--s-2); }
+
+/* Dashboard */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-5);
+}
+.section-title {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  margin: var(--s-6) 0 var(--s-3);
+}
+.section-title:first-child { margin-top: 0; }
