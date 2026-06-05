@@ -39,6 +39,7 @@
   z-index: 9999;
   animation: fadeIn var(--dur-base) var(--ease);
 }
+.login[hidden] { display: none; }
 .login__card {
   width: min(360px, 92vw);
   background: var(--surface);

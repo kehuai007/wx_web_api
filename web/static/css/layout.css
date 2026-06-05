@@ -10,6 +10,7 @@
   min-height: 100vh;
   transition: grid-template-columns var(--dur-base) var(--ease);
 }
+.app[hidden] { display: none; }
 
 .app.collapsed {
   --sidebar-w: var(--sidebar-w-collapsed);
