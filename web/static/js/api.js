@@ -34,7 +34,9 @@
       if (global.WXAuth && global.WXAuth.handle401) {
         global.WXAuth.handle401();
       }
-      throw new Error('未授权');
+      const err = new Error('未授权');
+      err.isAuth = true;
+      throw err;
     }
     return res;
   }
