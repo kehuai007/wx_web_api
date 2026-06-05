@@ -21,7 +21,6 @@
     isCollapsed() { return safeGet(KEY_COLLAPSED) === '1'; },
     setCollapsed(v) {
       if (v) safeSet(KEY_COLLAPSED, '1'); else safeDel(KEY_COLLAPSED);
-      document.body.firstElementChild?.classList?.toggle?.('collapsed', v);
       document.getElementById('appRoot')?.classList.toggle('collapsed', v);
     },
     toggleCollapsed() { Store.setCollapsed(!Store.isCollapsed()); },
