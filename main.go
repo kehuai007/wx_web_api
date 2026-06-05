@@ -5,6 +5,7 @@ import (
     "flag"
     "fmt"
     "log"
+    "net/http"
     "os"
     "path/filepath"
     "strings"
@@ -116,6 +117,22 @@ func main() {
 
     // External API: POST /wx/finder (token-authenticated)
     r.POST("/wx/finder", h.TokenAuth(), h.ParseFinderFeedByObjectID)
+
+    // SPA fallback: any unknown GET returns the shell so client-side routing can take over.
+    // Does not affect POST /wx, POST /wx/finder, or any /api/* route (they're registered above
+    // with exact paths and are matched first).
+    r.NoRoute(func(c *gin.Context) {
+        if c.Request.Method != http.MethodGet {
+            c.AbortWithStatus(404)
+            return
+        }
+        content, err := getFileContent("/index.html")
+        if err != nil {
+            c.String(500, "Internal error")
+            return
+        }
+        c.Data(200, "text/html; charset=utf-8", content)
+    })
 
     log.Printf("wx_web_api starting on :%d (build: %s)", effectivePort, buildTag)
     if err := r.Run(fmt.Sprintf(":%d", effectivePort)); err != nil {
