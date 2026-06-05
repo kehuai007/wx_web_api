@@ -11,11 +11,16 @@
   async function authFetch(url, options) {
     options = options || {};
     const token = getToken();
-    const headers = Object.assign(
-      { 'Content-Type': 'application/json' },
-      options.headers || {}
-    );
+    const callerHeaders = options.headers || {};
+    const headers = Object.assign({}, callerHeaders);
     if (token) headers['Authorization'] = token;
+    // Default Content-Type for JSON bodies only; let the browser set multipart
+    // boundary for FormData/Blob, and respect caller-supplied Content-Type.
+    if (!headers['Content-Type'] && !(options.body instanceof FormData)
+        && !(options.body instanceof Blob)
+        && typeof options.body !== 'undefined') {
+      headers['Content-Type'] = 'application/json';
+    }
 
     let res;
     try {
