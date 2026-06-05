@@ -1,6 +1,6 @@
 /* Client-side History API router.
  * - Single source of truth: ROUTES table
- * - Each route: { path, title, render(ctx) } where ctx = { params, query }
+ * - Each route: { path, title, page }
  * - Renders into #pageContent
  * - Updates <title> and #pageTitle
  * - Updates active state in #nav
@@ -31,7 +31,7 @@
 
   function parseQuery() {
     var q = {};
-    var s = global.location.search.replace(/^\?/, '');
+    var s = global.location.search.replace(/^\?/, '').replace(/\+/g, ' ');
     if (!s) return q;
     s.split('&').forEach(function (pair) {
       if (!pair) return;
@@ -68,10 +68,18 @@
 
     /* render page */
     var slot = document.getElementById('pageContent');
+    if (!slot) return;
     slot.innerHTML = '';
     var mod = global.WXPages && global.WXPages[meta.page];
     if (mod && typeof mod.render === 'function') {
-      var ret = mod.render(slot, { path: path, query: parseQuery() });
+      var ret;
+      try {
+        ret = mod.render(slot, { path: path, query: parseQuery() });
+      } catch (e) {
+        if (global.WXToast) global.WXToast('页面加载失败', 'error');
+        if (global.console) console.error(e);
+        return;
+      }
       if (ret && typeof ret.then === 'function') {
         ret.catch(function (e) {
           if (global.WXToast) global.WXToast('页面加载失败', 'error');
@@ -140,8 +148,9 @@
     buildNav();
     global.addEventListener('popstate', render);
     document.addEventListener('click', function (e) {
-      var a = e.target.closest && e.target.closest('[data-route]');
-      if (a) {
+      var a = e.target.closest('[data-route]');
+      // Only intercept internal links; let external links behave normally.
+      if (a && a.host === global.location.host && a.protocol === global.location.protocol) {
         e.preventDefault();
         navigate(a.getAttribute('data-route'));
       }
