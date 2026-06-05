@@ -105,7 +105,7 @@
   align-items: center;
   gap: var(--s-3);
   padding: 0 var(--s-5);
-  background: rgba(20, 20, 29, 0.7);
+  background: var(--surface-glass);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
@@ -177,8 +177,9 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   z-index: 99;
   opacity: 0;
   pointer-events: none;
