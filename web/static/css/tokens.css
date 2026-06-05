@@ -14,6 +14,9 @@
   --text-muted:  #9ca3af;
   --text-faint:  #6b7280;
 
+  /* Selection */
+  --selection-bg: rgba(34, 211, 238, 0.3);
+
   /* Status */
   --primary: #22d3ee;
   --accent:  #a855f7;

@@ -48,7 +48,7 @@ input, button, select, textarea {
 
 /* Selection */
 ::selection {
-  background: rgba(34, 211, 238, 0.3);
+  background: var(--selection-bg);
   color: var(--text);
 }
 
