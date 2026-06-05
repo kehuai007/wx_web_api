@@ -9,6 +9,7 @@
   var original = { apiBaseUrl: '', tokens: [] };
   var current  = { apiBaseUrl: '', tokens: [] };
   var tokenRevealed = {};
+  var beforeUnloadBound = false;
 
   function escapeHtml(s) {
     var div = document.createElement('div');
@@ -157,6 +158,8 @@
   }
 
   function bindBeforeUnload() {
+    if (beforeUnloadBound) return;
+    beforeUnloadBound = true;
     global.addEventListener('beforeunload', function (e) {
       if (isDirty()) {
         e.preventDefault();
@@ -181,6 +184,8 @@
   }
 
   function render(slot) {
+    /* Reset per-mount state so reveal/dirty don't leak across visits. */
+    tokenRevealed = {};
     slot.innerHTML =
       '<div class="card">' +
         '<div class="card__title">后端 API</div>' +
@@ -235,12 +240,13 @@
       }
     });
     document.getElementById('settingsApiBaseUrl').addEventListener('input', function (e) {
-      current.apiBaseUrl = e.currentTarget.value;
+      current.apiBaseUrl = e.currentTarget.value.trim();
       updateSaveButton();
     });
     document.getElementById('settingsCancelBtn').addEventListener('click', cancel);
     document.getElementById('settingsSaveBtn').addEventListener('click', save);
 
+    bindBeforeUnload();
     load();
   }
 
