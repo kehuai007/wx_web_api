@@ -22,7 +22,7 @@
   --danger:  #ef4444;
 
   /* Gradients */
-  --gradient-primary: linear-gradient(135deg, #22d3ee 0%, #a855f7 100%);
+  --gradient-primary: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
   --gradient-glow:    radial-gradient(circle at top right, rgba(168, 85, 247, 0.15), transparent 60%);
 
   /* Radius */
