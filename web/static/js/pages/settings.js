@@ -44,6 +44,7 @@
     if (!m) return null;
     var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
     if (isNaN(d.getTime())) return null;
+    if (d.getFullYear() !== Number(m[1]) || d.getMonth() !== Number(m[2]) - 1 || d.getDate() !== Number(m[3])) return null;
     return d;
   }
 
@@ -65,9 +66,17 @@
   function isDirty() {
     if (original.apiBaseUrl !== current.apiBaseUrl) return true;
     if (original.tokens.length !== current.tokens.length) return true;
-    for (var i = 0; i < original.tokens.length; i++) {
-      if (original.tokens[i].value !== current.tokens[i].value) return true;
-      if ((original.tokens[i].expires_at || '') !== (current.tokens[i].expires_at || '')) return true;
+    var sig = function (list) {
+      return list.map(function (t) {
+        return [t.value || '', t.expires_at || ''];
+      }).sort(function (a, b) {
+        return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
+      });
+    };
+    var a = sig(original.tokens);
+    var b = sig(current.tokens);
+    for (var i = 0; i < a.length; i++) {
+      if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return true;
     }
     return false;
   }
