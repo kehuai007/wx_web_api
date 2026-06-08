@@ -59,10 +59,8 @@ func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
 				return
 			}
 			if seen[value] {
-				c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "invalid tokens: duplicate value at index " + itoa(i)})
-				return
+				continue // silently drop duplicates per spec step 3
 			}
-			seen[value] = true
 			expires := strings.TrimSpace(t.ExpiresAt)
 			if expires != "" {
 				if _, err := time.Parse("2006-01-02", expires); err != nil {
@@ -70,6 +68,7 @@ func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
 					return
 				}
 			}
+			seen[value] = true
 			normalized = append(normalized, config.Token{Value: value, ExpiresAt: expires})
 		}
 		cfg.Tokens = normalized
