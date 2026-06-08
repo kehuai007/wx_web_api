@@ -90,7 +90,6 @@
 }
 .token-item__row--expiry {
   gap: var(--s-2);
-  align-items: center;
 }
 .token-item__expiry-label {
   font-size: var(--t-sm);
@@ -129,25 +128,6 @@
   display: flex;
   gap: var(--s-2);
   align-items: center;
-}
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px var(--s-2);
-  border-radius: 999px;
-  font-size: var(--t-xs);
-  font-weight: 500;
-  line-height: 1.4;
-}
-.badge--warning {
-  background: rgba(245, 158, 11, 0.15);
-  color: var(--warning);
-  border: 1px solid rgba(245, 158, 11, 0.4);
-}
-.badge--danger {
-  background: rgba(239, 68, 68, 0.15);
-  color: var(--danger);
-  border: 1px solid rgba(239, 68, 68, 0.4);
 }
 
 @media (max-width: 640px) {
