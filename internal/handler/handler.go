@@ -174,8 +174,12 @@ func (h *Handler) isExpired(expiresAt string) bool {
 	if ok {
 		parsed = cached.(time.Time)
 	} else {
+		// Parse in server's local timezone — a date like "2026-06-08" represents
+		// the entire local day 2026-06-08, not UTC 2026-06-08 00:00:00. Using
+		// time.Parse would treat the expiry as UTC and shift it by the local
+		// offset, causing tokens set in the local day to be wrongly rejected.
 		var err error
-		parsed, err = time.Parse("2006-01-02", expiresAt)
+		parsed, err = time.ParseInLocation("2006-01-02", expiresAt, time.Local)
 		if err != nil {
 			return false
 		}
