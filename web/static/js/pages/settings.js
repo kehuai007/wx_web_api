@@ -1,5 +1,6 @@
-/* Settings page — full implementation.
- * Loads /api/config, renders form, supports add/remove/copy tokens,
+/* Settings page — full implementation with token expiration.
+ * Loads /api/config, renders form, supports add/remove/copy/reveal tokens
+ * and per-row expiration date (manual + 5 quick presets + status badge),
  * dirty tracking, save/cancel, beforeunload prompt.
  */
 
@@ -11,10 +12,48 @@
   var tokenRevealed = {};
   var beforeUnloadBound = false;
 
+  var PRESETS = [
+    { label: '7天',  days: 7 },
+    { label: '30天', days: 30 },
+    { label: '90天', days: 90 },
+    { label: '1年',  days: 365 }
+  ];
+
   function escapeHtml(s) {
     var div = document.createElement('div');
     div.textContent = s == null ? '' : String(s);
     return div.innerHTML;
+  }
+
+  function todayStr() {
+    var d = new Date();
+    var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function presetDate(days) {
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function parseDate(s) {
+    if (!s) return null;
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (!m) return null;
+    var d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (isNaN(d.getTime())) return null;
+    return d;
+  }
+
+  function daysUntil(dateStr) {
+    var d = parseDate(dateStr);
+    if (!d) return null;
+    var now = new Date();
+    var todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var diffMs = d.getTime() - todayMid.getTime();
+    return Math.round(diffMs / 86400000);
   }
 
   function mask(token) {
@@ -27,7 +66,8 @@
     if (original.apiBaseUrl !== current.apiBaseUrl) return true;
     if (original.tokens.length !== current.tokens.length) return true;
     for (var i = 0; i < original.tokens.length; i++) {
-      if (original.tokens[i] !== current.tokens[i]) return true;
+      if (original.tokens[i].value !== current.tokens[i].value) return true;
+      if ((original.tokens[i].expires_at || '') !== (current.tokens[i].expires_at || '')) return true;
     }
     return false;
   }
@@ -36,6 +76,15 @@
     var btn = document.getElementById('settingsSaveBtn');
     if (!btn) return;
     btn.disabled = !isDirty();
+  }
+
+  function badgeHtmlFor(dateStr) {
+    var d = daysUntil(dateStr);
+    if (d == null) return '';
+    if (d < 0)  return '<span class="badge badge--danger">已过期</span>';
+    if (d === 0) return '<span class="badge badge--danger">今天过期</span>';
+    if (d <= 7) return '<span class="badge badge--warning">' + d + ' 天后过期</span>';
+    return '';
   }
 
   function renderTokens() {
@@ -51,13 +100,31 @@
     slot.innerHTML = current.tokens.map(function (t, i) {
       var revealed = !!tokenRevealed[i];
       var valueHtml = revealed
-        ? '<span class="token-item__value">' + escapeHtml(t) + '</span>'
-        : '<span class="token-item__value token-item__value--masked">' + escapeHtml(mask(t)) + '</span>';
-      return '<div class="token-item" data-idx="' + i + '">' +
-               valueHtml +
-               '<button type="button" class="btn btn--ghost btn--sm" data-action="copy" data-idx="' + i + '">复制</button>' +
-               '<button type="button" class="btn btn--ghost btn--sm" data-action="toggle" data-idx="' + i + '">' + (revealed ? '隐藏' : '显示') + '</button>' +
-               '<button type="button" class="btn btn--danger btn--sm" data-action="remove" data-idx="' + i + '">删除</button>' +
+        ? '<span class="token-item__value">' + escapeHtml(t.value) + '</span>'
+        : '<span class="token-item__value token-item__value--masked">' + escapeHtml(mask(t.value)) + '</span>';
+      var expires = t.expires_at || '';
+      var presetsHtml = PRESETS.map(function (p) {
+        var active = expires && expires === presetDate(p.days);
+        return '<button type="button" class="btn btn--sm btn--preset' + (active ? ' btn--active' : '') +
+               '" data-action="preset" data-idx="' + i + '" data-days="' + p.days + '">' + p.label + '</button>';
+      }).join('');
+      var permanentActive = !expires ? ' btn--active' : '';
+      var badge = badgeHtmlFor(expires);
+      return '<div class="token-item token-item--with-expiry" data-idx="' + i + '">' +
+               '<div class="token-item__row">' +
+                 valueHtml +
+                 '<button type="button" class="btn btn--ghost btn--sm" data-action="copy" data-idx="' + i + '">复制</button>' +
+                 '<button type="button" class="btn btn--ghost btn--sm" data-action="toggle" data-idx="' + i + '">' + (revealed ? '隐藏' : '显示') + '</button>' +
+                 '<button type="button" class="btn btn--danger btn--sm" data-action="remove" data-idx="' + i + '">删除</button>' +
+               '</div>' +
+               '<div class="token-item__row token-item__row--expiry">' +
+                 '<label class="token-item__expiry-label">过期日期</label>' +
+                 '<input type="date" class="input input--date" data-action="expiry" data-idx="' + i + '" value="' + escapeHtml(expires) + '" placeholder="yyyy-MM-dd">' +
+                 '<div class="token-item__presets">' + presetsHtml +
+                   '<button type="button" class="btn btn--sm btn--preset' + permanentActive + '" data-action="preset-permanent" data-idx="' + i + '">永久</button>' +
+                 '</div>' +
+               '</div>' +
+               (badge ? '<div class="token-item__badge">' + badge + '</div>' : '') +
              '</div>';
     }).join('');
     if (countEl) countEl.textContent = '共 ' + current.tokens.length + ' 个 token';
@@ -69,11 +136,13 @@
       if (global.WXToast) global.WXToast('Token 不能为空', 'error');
       return false;
     }
-    if (current.tokens.indexOf(token) !== -1) {
-      if (global.WXToast) global.WXToast('Token 已存在', 'error');
-      return false;
+    for (var i = 0; i < current.tokens.length; i++) {
+      if (current.tokens[i].value === token) {
+        if (global.WXToast) global.WXToast('Token 已存在', 'error');
+        return false;
+      }
     }
-    current.tokens.push(token);
+    current.tokens.push({ value: token, expires_at: '' });
     renderTokens();
     updateSaveButton();
     return true;
@@ -83,7 +152,6 @@
     if (idx < 0 || idx >= current.tokens.length) return;
     current.tokens.splice(idx, 1);
     delete tokenRevealed[idx];
-    /* reindex reveal flags */
     var next = {};
     Object.keys(tokenRevealed).forEach(function (k) {
       var n = Number(k);
@@ -99,13 +167,13 @@
     var t = current.tokens[idx];
     if (!t) return;
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(t).then(function () {
+      navigator.clipboard.writeText(t.value).then(function () {
         if (global.WXToast) global.WXToast('已复制', 'success');
       }, function () {
-        fallbackCopy(t);
+        fallbackCopy(t.value);
       });
     } else {
-      fallbackCopy(t);
+      fallbackCopy(t.value);
     }
   }
   function fallbackCopy(text) {
@@ -120,11 +188,20 @@
     if (global.WXToast) global.WXToast('已复制', 'success');
   }
 
+  function setExpiry(idx, value) {
+    if (idx < 0 || idx >= current.tokens.length) return;
+    current.tokens[idx].expires_at = value || '';
+    renderTokens();
+    updateSaveButton();
+  }
+
   async function save() {
     var apiBaseUrl = (document.getElementById('settingsApiBaseUrl').value || '').trim() ||
                      'http://127.0.0.1:2022';
     current.apiBaseUrl = apiBaseUrl;
-    current.tokens = current.tokens.slice();
+    var tokensToSend = current.tokens.map(function (t) {
+      return { value: t.value, expires_at: t.expires_at || '' };
+    });
 
     var btn = document.getElementById('settingsSaveBtn');
     if (btn) { btn.disabled = true; btn.classList.add('is-loading'); btn.textContent = '保存中…'; }
@@ -132,10 +209,13 @@
     try {
       var res = await global.WXApi.authJson('/api/config', {
         method: 'PUT',
-        body: JSON.stringify({ api_base_url: apiBaseUrl, tokens: current.tokens })
+        body: JSON.stringify({ api_base_url: apiBaseUrl, tokens: tokensToSend })
       });
       if (res.data && res.data.code === 0) {
-        original = { apiBaseUrl: apiBaseUrl, tokens: current.tokens.slice() };
+        original = {
+          apiBaseUrl: apiBaseUrl,
+          tokens: tokensToSend.map(function (t) { return { value: t.value, expires_at: t.expires_at }; })
+        };
         if (global.WXToast) global.WXToast('保存成功', 'success');
       } else {
         if (global.WXToast) global.WXToast((res.data && res.data.msg) || '保存失败', 'error');
@@ -149,7 +229,10 @@
   }
 
   function cancel() {
-    current = { apiBaseUrl: original.apiBaseUrl, tokens: original.tokens.slice() };
+    current = {
+      apiBaseUrl: original.apiBaseUrl,
+      tokens: original.tokens.map(function (t) { return { value: t.value, expires_at: t.expires_at }; })
+    };
     var input = document.getElementById('settingsApiBaseUrl');
     if (input) input.value = original.apiBaseUrl;
     tokenRevealed = {};
@@ -171,11 +254,15 @@
   async function load() {
     var res = await global.WXApi.authJson('/api/config');
     if (res.data && res.data.code === 0 && res.data.data) {
+      var toks = Array.isArray(res.data.data.tokens) ? res.data.data.tokens : [];
       original = {
         apiBaseUrl: res.data.data.api_base_url || 'http://127.0.0.1:2022',
-        tokens: Array.isArray(res.data.data.tokens) ? res.data.data.tokens.slice() : []
+        tokens: toks.map(function (t) { return { value: t.value, expires_at: t.expires_at || '' }; })
       };
-      current = { apiBaseUrl: original.apiBaseUrl, tokens: original.tokens.slice() };
+      current = {
+        apiBaseUrl: original.apiBaseUrl,
+        tokens: original.tokens.map(function (t) { return { value: t.value, expires_at: t.expires_at }; })
+      };
       var input = document.getElementById('settingsApiBaseUrl');
       if (input) input.value = current.apiBaseUrl;
       renderTokens();
@@ -184,7 +271,6 @@
   }
 
   function render(slot) {
-    /* Reset per-mount state so reveal/dirty don't leak across visits. */
     tokenRevealed = {};
     slot.innerHTML =
       '<div class="card">' +
@@ -214,8 +300,8 @@
         '<button type="button" class="btn btn--primary" id="settingsSaveBtn">保存配置</button>' +
       '</div>';
 
-    /* event delegation for token list */
     var list = document.getElementById('settingsTokenList');
+
     list.addEventListener('click', function (e) {
       var btn = e.target.closest('button[data-action]');
       if (!btn) return;
@@ -226,7 +312,19 @@
       else if (action === 'toggle') {
         tokenRevealed[idx] = !tokenRevealed[idx];
         renderTokens();
+      } else if (action === 'preset') {
+        var days = Number(btn.getAttribute('data-days'));
+        setExpiry(idx, presetDate(days));
+      } else if (action === 'preset-permanent') {
+        setExpiry(idx, '');
       }
+    });
+
+    list.addEventListener('change', function (e) {
+      var input = e.target.closest('input[data-action="expiry"]');
+      if (!input) return;
+      var idx = Number(input.getAttribute('data-idx'));
+      setExpiry(idx, input.value);
     });
 
     document.getElementById('settingsAddTokenBtn').addEventListener('click', function () {
