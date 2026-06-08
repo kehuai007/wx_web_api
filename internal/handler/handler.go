@@ -15,9 +15,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// sessMu guards sessionTokens.
 type Handler struct {
 	parser        *service.ParserService
 	pwd           string
+	sessMu        sync.RWMutex
 	sessionTokens map[string]bool
 	dateCache     sync.Map // string (yyyy-MM-dd) -> time.Time
 }
@@ -79,7 +81,14 @@ func (h *Handler) SessionAuth() gin.HandlerFunc {
 		if token == "" {
 			token = c.Query("token")
 		}
-		if token == "" || !h.sessionTokens[token] {
+		if token == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "unauthorized"})
+			return
+		}
+		h.sessMu.RLock()
+		ok := h.sessionTokens[token]
+		h.sessMu.RUnlock()
+		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"code": 401, "msg": "unauthorized"})
 			return
 		}
@@ -114,7 +123,9 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 	token := generateToken()
+	h.sessMu.Lock()
 	h.sessionTokens[token] = true
+	h.sessMu.Unlock()
 	c.JSON(http.StatusOK, gin.H{"code": 0, "token": token})
 }
 
