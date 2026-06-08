@@ -111,3 +111,23 @@ func migrateTokens(data []byte) (bool, int) {
 	}
 	return true, legacyCount
 }
+
+func Get() *Config {
+	if defaultManager == nil {
+		return &Config{ApiBaseUrl: "http://127.0.0.1:2022", Port: 13335}
+	}
+	defaultManager.mu.RLock()
+	defer defaultManager.mu.RUnlock()
+	return defaultManager.config
+}
+
+func Save(c *Config) error {
+	if defaultManager == nil {
+		return nil
+	}
+	defaultManager.mu.Lock()
+	defer defaultManager.mu.Unlock()
+	data, _ := json.MarshalIndent(c, "", "  ")
+	defaultManager.config = c
+	return os.WriteFile(defaultManager.path, data, 0644)
+}
