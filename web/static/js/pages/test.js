@@ -48,6 +48,8 @@
     return s.length > n ? s.slice(0, n) + '…' : s;
   }
 
+  // Per the implementation plan: 1/2/4 are mapped, all other values (including 0)
+  // are rendered as "N (未知)" — the spec table's "0=未知" is not special-cased.
   function mediaTypeLabel(t) {
     if (MEDIA_TYPE_LABELS[t]) return t + ' (' + MEDIA_TYPE_LABELS[t] + ')';
     return t + ' (未知)';
@@ -89,7 +91,10 @@
   }
 
   function redactedRequest(req) {
-    // deep clone via JSON to strip token values from headers/body for display
+    // Strip token values from headers for display. Body redaction is intentionally
+    // omitted: the test page only ever puts {url} or {objectId, objectNonceId} in
+    // the body, so no auth-shaped field can leak. If a future endpoint takes a
+    // token in the body, add a `token` key check here.
     var copy = {
       method: req.method,
       url: req.url,
@@ -240,10 +245,10 @@
   function renderResultFields(d) {
     var rows = [];
     if (d.author) {
-      rows.push(fieldRow('Author', escapeHtml(d.author), 'author', d.author));
+      rows.push(fieldRow('Author', escapeHtml(d.author), d.author));
     }
     if (d.title) {
-      rows.push(fieldRow('Title', escapeHtml(d.title), 'title', d.title));
+      rows.push(fieldRow('Title', escapeHtml(d.title), d.title));
     }
     if (d.cover_url) {
       var coverImg = '<img class="result-cover" src="' + escapeHtml(d.cover_url) + '" alt="cover" referrerpolicy="no-referrer">';
@@ -263,7 +268,7 @@
                 '</div>');
     }
     if (d.decode_key) {
-      rows.push(fieldRow('Decode Key', escapeHtml(d.decode_key), 'decode_key', d.decode_key));
+      rows.push(fieldRow('Decode Key', escapeHtml(d.decode_key), d.decode_key));
     }
     rows.push('<div class="field">' +
                 '<div class="field-label">Media Type</div>' +
@@ -273,7 +278,7 @@
     return '<div class="result-fields">' + rows.join('') + '</div>';
   }
 
-  function fieldRow(label, valueHtml, _name, raw) {
+  function fieldRow(label, valueHtml, raw) {
     return '<div class="field">' +
              '<div class="field-label">' + escapeHtml(label) + '</div>' +
              '<div class="field-value field-value--text">' + valueHtml + '</div>' +
@@ -410,7 +415,7 @@
       return;
     }
     readFormInputs(slot);
-    var endpoint, body, ok;
+    var endpoint, body;
     if (state.activeTab === 'url') {
       var url = (state.urlInput || '').trim();
       if (!url) {
