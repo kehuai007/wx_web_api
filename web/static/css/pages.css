@@ -321,7 +321,6 @@
 .details__toggle .chev { display: inline-block; transition: transform var(--dur-fast) var(--ease); }
 .details--open .details__toggle .chev { transform: rotate(90deg); }
 .details__body {
-  display: none;
   margin-top: var(--s-3);
   display: grid;
   gap: var(--s-3);
