@@ -22,7 +22,7 @@
     watchdogTimer: null,
     lastSnapshotTs: 0,
     lastFrameAt: 0,
-    connectionStatus: 'connecting' // 'ok' | 'connecting' | 'err'
+    connectionStatus: 'connecting' // 'ok' | 'connecting' | 'err' | 'auth_err'
   };
 
   function escapeHtml(s) {
@@ -104,6 +104,8 @@
       label = '🟢 已连接 (' + ago(state.lastFrameAt) + ')';
     } else if (state.connectionStatus === 'connecting') {
       label = '🟡 连接中...';
+    } else if (state.connectionStatus === 'auth_err') {
+      label = '🔴 鉴权失败,请重新登录';
     } else {
       label = '🔴 已断开 (重连中...)';
     }
@@ -270,14 +272,46 @@
       }
     };
     ws.onerror = function () {
-      state.connectionStatus = 'err';
-      updateConnectionBadge(slot);
+      handleDisconnect(slot);
     };
     ws.onclose = function () {
-      state.connectionStatus = 'err';
-      updateConnectionBadge(slot);
-      scheduleReconnect(slot);
+      handleDisconnect(slot);
     };
+  }
+
+  /* Probe /api/system once per disconnect cycle to distinguish auth failure
+   * (401 after server restart) from transient network issues. Returns true if
+   * auth still looks valid (or probe itself failed for non-auth reasons) — in
+   * that case we proceed with the existing reconnect-with-backoff path.
+   * Returns false only when the probe definitively says 401. */
+  async function probeAuth() {
+    try {
+      var res = await global.WXApi.authJson('/api/system');
+      // res.status === 200 here means the session token is accepted
+      return true;
+    } catch (e) {
+      if (e && e.isAuth) return false;
+      // network / 500 / parse error — don't claim auth failure
+      return true;
+    }
+  }
+
+  async function handleDisconnect(slot) {
+    // Show "连接中..." (yellow) while we probe, so the user sees we're
+    // investigating rather than just hammering reconnects.
+    state.connectionStatus = 'connecting';
+    updateConnectionBadge(slot);
+
+    var authOk = await probeAuth();
+    if (!authOk) {
+      state.connectionStatus = 'auth_err';
+      updateConnectionBadge(slot);
+      return; // do not schedule reconnect
+    }
+
+    state.connectionStatus = 'err';
+    updateConnectionBadge(slot);
+    scheduleReconnect(slot);
   }
 
   function scheduleReconnect(slot) {
