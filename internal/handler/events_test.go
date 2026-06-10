@@ -345,3 +345,59 @@ func TestEventsHub_Snapshot_ReturnsCurrentValues(t *testing.T) {
 		t.Error("mem.sys = 0, want >0")
 	}
 }
+
+func TestHandleEventsWS_SendsSnapshotOnHello(t *testing.T) {
+	hub := newTestHub()
+	// 本测试不调 hub.Start(只用 register + 直接读 hello),只验证 hello 触发首帧逻辑。
+
+	// 起一个直接用 HandleEventsWS 形态的 server(测试不依赖 gin,直接用 httptest)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		client := hub.register(conn)
+		defer hub.unregister(client)
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var m struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(msg, &m) == nil && m.Type == "client.hello" {
+				snap := hub.Snapshot()
+				conn.WriteJSON(snap)
+			}
+		}
+	}))
+	defer ts.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.WriteJSON(map[string]string{"type": "client.hello"}); err != nil {
+		t.Fatalf("write hello: %v", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, msg, err := conn.ReadMessage()
+	if err != nil {
+		t.Fatalf("read frame: %v", err)
+	}
+	var snap struct {
+		Type string `json:"type"`
+		Ts   int64  `json:"ts"`
+	}
+	if err := json.Unmarshal(msg, &snap); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if snap.Type != "system.snapshot" {
+		t.Errorf("type=%q want system.snapshot", snap.Type)
+	}
+}

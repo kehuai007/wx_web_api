@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -13,10 +14,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SystemData is the one-shot response of GET /api/system. It contains values
-// that do not change at runtime: build metadata, configured ports, paths, file
-// sizes. Values that *do* change (uptime, goroutines, memory) are sent via the
-// SystemSnapshot WebSocket push instead.
+// SystemData 是 GET /api/system 一次性响应的 shape。
+// 不会变的字段(build tag、port、DB 路径等);运行时字段(uptime、goroutine、内存)走 WS 推送。
 type SystemData struct {
 	BuildTag   string `json:"build_tag"`
 	BuildTime  string `json:"build_time"`
@@ -32,8 +31,7 @@ type SystemData struct {
 	TokenCount int    `json:"token_count"`
 }
 
-// GetSystem handles GET /api/system. Returns the static SystemData snapshot.
-// Frontend fetches this on page render; live values come via /ws/system.
+// GetSystem 一次性拉静态字段,前端首屏渲染时调用。
 func (h *Handler) GetSystem(c *gin.Context) {
 	cfg := config.Get()
 	dbPath := filepath.Join(config.ExeDir, "wx_web_api.db")
@@ -58,34 +56,41 @@ func (h *Handler) GetSystem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": data})
 }
 
-// HandleSystemWS upgrades the HTTP connection to a WebSocket and registers
-// the connection with SystemHub. The first frame sent is an immediate
-// SystemSnapshot so the client does not have to wait up to 2 seconds for
-// the first tick. After that, the goroutine blocks reading from the
-// connection; any read error (which on a WebSocket means the client has
-// disconnected) triggers cleanup via deferred unregister.
-func (h *Handler) HandleSystemWS(c *gin.Context) {
+// HandleEventsWS 升级到 /ws/events。注册到 EventsHub,读 client.hello 推首帧,
+// 之后阻塞读;客户端断开时 unregister 链式清理。
+//
+// 设计:首帧由客户端主动触发("client.hello"),而不是服务端升级后立即推。
+// 原因:Hub 不知道当前 page 是不是已经订阅了 system.snapshot;让客户端在 onopen 后
+// 显式请求首帧,可以保证订阅语义和首帧到达顺序一致(订阅在前、首帧在后)。
+func (h *Handler) HandleEventsWS(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("ws upgrade failed: %v", err)
 		return
 	}
-	SystemHub.register(conn)
-	defer SystemHub.unregister(conn)
+	client := EventsHub.register(conn)
+	defer EventsHub.unregister(client)
 
-	// Send initial snapshot immediately so the client sees data on first
-	// frame, not after the next ticker fire.
-	if err := conn.WriteJSON(SystemHub.collectSnapshot(h.storage)); err != nil {
-		return
-	}
-
-	// Block reading from the connection. We do not consume any client
-	// messages — this is a server-push channel — but reading is the only
-	// way to detect client disconnect on a WebSocket. NextReader returns
-	// an error when the client closes; we then unregister and return.
+	// 读循环:收到 client.hello 立刻推一帧 system.snapshot;之后客户端继续读,
+	// 我们不消费具体 payload,只监测连接存活(NextReader 报错 = 客户端断开)。
 	for {
-		if _, _, err := conn.NextReader(); err != nil {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
 			return
 		}
+		var m struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(msg, &m); err != nil {
+			// 忽略无法解析的帧,继续读
+			continue
+		}
+		if m.Type == "client.hello" {
+			snap := EventsHub.Snapshot()
+			if err := conn.WriteJSON(snap); err != nil {
+				return
+			}
+		}
+		// 其它 type 一律忽略(协议目前仅 client.hello 一类客户端消息)
 	}
 }
