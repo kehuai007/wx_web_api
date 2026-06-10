@@ -404,3 +404,116 @@
   .history-item { flex-wrap: wrap; }
   .history-item__summary { width: 100%; order: 99; }
 }
+
+/* ============================================================
+ * System page (系统信息) — Phase 3
+ * ============================================================ */
+
+/* Definition-list kv grid used by every system card. */
+.kv {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: var(--s-2) var(--s-4);
+  margin: 0;
+}
+.kv dt {
+  color: var(--text-muted);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  padding-top: 2px;
+}
+.kv dd {
+  color: var(--text);
+  font-size: var(--t-sm);
+  font-family: var(--font-mono);
+  word-break: break-all;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.kv dd .kv__value--muted {
+  color: var(--text-faint);
+}
+.kv dd .kv__sub {
+  color: var(--text-faint);
+  font-size: var(--t-xs);
+  font-family: var(--font-sans);
+}
+
+/* Connection badge (live indicator at the top of the runtime card) */
+.conn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 2px var(--s-2);
+  border-radius: var(--r-full);
+  font-size: var(--t-xs);
+  font-weight: 500;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.conn-badge__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  display: inline-block;
+}
+.conn-badge--ok .conn-badge__dot {
+  background: var(--success);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+.conn-badge--ok { color: var(--success); }
+.conn-badge--connecting { color: var(--warning); }
+.conn-badge--connecting .conn-badge__dot {
+  background: var(--warning);
+  animation: pulse 1s ease-in-out infinite;
+}
+.conn-badge--err { color: var(--danger); }
+.conn-badge--err .conn-badge__dot { background: var(--danger); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Health度 section divider */
+.health-note {
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px dashed var(--border);
+  font-size: var(--t-xs);
+  color: var(--text-faint);
+}
+.health-note a {
+  color: var(--primary);
+  text-decoration: none;
+}
+.health-note a:hover { text-decoration: underline; }
+
+/* External link button (used for pprof) */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--primary);
+  padding: 2px var(--s-2);
+  font-size: var(--t-xs);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-mono);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.link-btn:hover { border-color: var(--primary); }
+
+/* Mobile: stack kv columns */
+@media (max-width: 640px) {
+  .kv { grid-template-columns: 1fr; gap: var(--s-1) 0; }
+  .kv dt { padding-top: var(--s-2); }
+  .kv dt:first-child { padding-top: 0; }
+}
