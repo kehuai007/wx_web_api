@@ -60,7 +60,7 @@ func (s *Storage) LogRequest(r *RequestLog) error {
 		r.Ts, r.TokenLabel, r.Kind, r.Source, string(r.Request), r.Status, r.LatencyMs, r.Msg, nullableJSON(r.Result),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("log request: %w", err)
 	}
 	// Populate r.ID so callers can immediately reference the inserted row
 	// (e.g. for delete-by-id round-trip in tests and for log-and-respond flows).
@@ -171,7 +171,7 @@ func (s *Storage) DeleteByIDs(ids []int64) (int64, error) {
 	}
 	res, err := s.db.Exec("DELETE FROM request_log WHERE id IN ("+placeholders+")", args...)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("delete by ids: %w", err)
 	}
 	return res.RowsAffected()
 }
@@ -179,7 +179,7 @@ func (s *Storage) DeleteByIDs(ids []int64) (int64, error) {
 func (s *Storage) DeleteAll() (int64, error) {
 	res, err := s.db.Exec("DELETE FROM request_log")
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("delete all: %w", err)
 	}
 	return res.RowsAffected()
 }
@@ -187,7 +187,7 @@ func (s *Storage) DeleteAll() (int64, error) {
 func (s *Storage) PurgeOlderThan(cutoffMs int64) (int64, error) {
 	res, err := s.db.Exec("DELETE FROM request_log WHERE ts < ?", cutoffMs)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("purge older than: %w", err)
 	}
 	return res.RowsAffected()
 }
@@ -195,17 +195,26 @@ func (s *Storage) PurgeOlderThan(cutoffMs int64) (int64, error) {
 func (s *Storage) Count() (int64, error) {
 	var n int64
 	err := s.db.QueryRow("SELECT COUNT(*) FROM request_log").Scan(&n)
-	return n, err
+	if err != nil {
+		return 0, fmt.Errorf("count: %w", err)
+	}
+	return n, nil
 }
 
 func (s *Storage) CountSince(sinceMs int64) (int64, error) {
 	var n int64
 	err := s.db.QueryRow("SELECT COUNT(*) FROM request_log WHERE ts >= ?", sinceMs).Scan(&n)
-	return n, err
+	if err != nil {
+		return 0, fmt.Errorf("count since: %w", err)
+	}
+	return n, nil
 }
 
 func (s *Storage) CountErrors() (int64, error) {
 	var n int64
 	err := s.db.QueryRow("SELECT COUNT(*) FROM request_log WHERE status != 0").Scan(&n)
-	return n, err
+	if err != nil {
+		return 0, fmt.Errorf("count errors: %w", err)
+	}
+	return n, nil
 }
