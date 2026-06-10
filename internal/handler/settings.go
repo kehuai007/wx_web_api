@@ -17,8 +17,9 @@ func NewSettingsHandler() *SettingsHandler {
 }
 
 type ConfigData struct {
-	ApiBaseUrl string         `json:"api_base_url"`
-	Tokens     []config.Token `json:"tokens"`
+	ApiBaseUrl           string         `json:"api_base_url"`
+	Tokens               []config.Token `json:"tokens"`
+	HistoryRetentionDays int            `json:"history_retention_days"`
 }
 
 func (h *SettingsHandler) GetConfig(c *gin.Context) {
@@ -26,15 +27,17 @@ func (h *SettingsHandler) GetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": ConfigData{
-			ApiBaseUrl: cfg.ApiBaseUrl,
-			Tokens:     cfg.Tokens,
+			ApiBaseUrl:           cfg.ApiBaseUrl,
+			Tokens:               cfg.Tokens,
+			HistoryRetentionDays: cfg.HistoryRetentionDays,
 		},
 	})
 }
 
 type UpdateConfigRequest struct {
-	ApiBaseUrl string         `json:"api_base_url"`
-	Tokens     []config.Token `json:"tokens"`
+	ApiBaseUrl           string         `json:"api_base_url"`
+	Tokens               []config.Token `json:"tokens"`
+	HistoryRetentionDays *int           `json:"history_retention_days"`
 }
 
 func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
@@ -69,9 +72,18 @@ func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
 				}
 			}
 			seen[value] = true
-			normalized = append(normalized, config.Token{Value: value, ExpiresAt: expires})
+			normalized = append(normalized, config.Token{Value: value, Label: strings.TrimSpace(t.Label), ExpiresAt: expires})
 		}
 		cfg.Tokens = normalized
+	}
+
+	// Pointer distinguishes "absent" (don't touch) from "explicit zero" (set to 0=permanent).
+	if req.HistoryRetentionDays != nil {
+		if *req.HistoryRetentionDays < 0 {
+			c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "history_retention_days must be >= 0"})
+			return
+		}
+		cfg.HistoryRetentionDays = *req.HistoryRetentionDays
 	}
 
 	if err := config.Save(cfg); err != nil {
