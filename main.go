@@ -9,6 +9,7 @@ import (
     "os"
     "path/filepath"
     "strings"
+    "wx_web_api/internal/buildinfo"
     "wx_web_api/internal/config"
     "wx_web_api/internal/handler"
 
@@ -18,7 +19,7 @@ import (
 //go:embed web
 var webAssets embed.FS
 
-var buildTag = "dev"
+var buildTag = buildinfo.BuildTag
 
 func getFileContent(name string) ([]byte, error) {
     name = strings.TrimPrefix(name, "/")
@@ -111,6 +112,10 @@ func main() {
         cfgGroup.GET("", settingsHandler.GetConfig)
         cfgGroup.PUT("", settingsHandler.UpdateConfig)
     }
+
+    // System info routes (session-authenticated)
+    r.GET("/api/system", h.SessionAuth(), h.GetSystem)
+    r.GET("/ws/system", h.SessionAuth(), h.HandleSystemWS)
 
     // External API: POST /wx (token-authenticated)
     r.POST("/wx", h.TokenAuth(), h.ParseWxURL)
