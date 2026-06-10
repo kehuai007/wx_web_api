@@ -1,28 +1,20 @@
 /* System page (系统信息) — admin-only runtime / version / config / health view.
- * Loads /api/system for static values, opens a WebSocket to /ws/system for
- * live updates every 2s, auto-reconnects with exponential backoff.
+ * Loads /api/system for static values, subscribes to WXEvents 'system.snapshot'
+ * for live updates every 2s.
  *
- * WebSocket auth: the browser WS API cannot send custom headers, so the
- * session token is passed via the URL query string. The server's SessionAuth
- * middleware already accepts both Authorization header and ?token= query.
+ * 改动(本次):
+ * - 删除自带 WS 客户端、watchdog、reconnect、probeAuth
+ * - 改用 WXEvents.subscribe('system.snapshot', ...)
+ * - 改用 WXEvents.onStatusChange(...) 驱动连接徽章
+ * - render() 入口先 cleanup 旧订阅,避免 router 切换时回调打到 detach 的 slot
  */
 
 (function (global) {
   'use strict';
 
-  var RECONNECT_BASE_MS = 1000;
-  var RECONNECT_MAX_MS = 30000;
-  var STALE_THRESHOLD_MS = 6000; // > 3 missed ticks => consider connection stale
-
   var state = {
     staticLoaded: false,
-    ws: null,
-    reconnectAttempt: 0,
-    reconnectTimer: null,
-    watchdogTimer: null,
-    lastSnapshotTs: 0,
-    lastFrameAt: 0,
-    connectionStatus: 'connecting' // 'ok' | 'connecting' | 'err' | 'auth_err'
+    unsubscribers: [],
   };
 
   function escapeHtml(s) {
@@ -81,9 +73,9 @@
              '<div class="card__title">健康度</div>' +
              '<dl class="kv" id="sysHealthKv"></dl>' +
              '<div class="health-note">' +
-               '性能分析（pprof）: ' +
+               '性能分析(pprof): ' +
                '<a href="/debug/pprof/" target="_blank" rel="noopener noreferrer" class="link-btn">/debug/pprof/ ↗</a>' +
-               ' <span class="kv__sub">（需要服务端启用 pprof 路由）</span>' +
+               ' <span class="kv__sub">(需要服务端启用 pprof 路由)</span>' +
              '</div>' +
            '</div>';
   }
@@ -99,18 +91,19 @@
   }
 
   function connectionBadge() {
+    var status = global.WXEvents ? global.WXEvents.connectionStatus : 'connecting';
     var label;
-    if (state.connectionStatus === 'ok') {
-      label = '🟢 已连接 (' + ago(state.lastFrameAt) + ')';
-    } else if (state.connectionStatus === 'connecting') {
+    if (status === 'ok') {
+      label = '🟢 已连接';
+    } else if (status === 'connecting') {
       label = '🟡 连接中...';
-    } else if (state.connectionStatus === 'auth_err') {
+    } else if (status === 'auth_err') {
       label = '🔴 鉴权失败,请重新登录';
     } else {
       label = '🔴 已断开 (重连中...)';
     }
     return '<dt>连接状态</dt><dd>' +
-             '<span class="conn-badge conn-badge--' + state.connectionStatus + '">' +
+             '<span class="conn-badge conn-badge--' + status + '">' +
                '<span class="conn-badge__dot"></span>' + label +
              '</span>' +
            '</dd>';
@@ -175,15 +168,8 @@
   /* ---------- snapshot apply ---------- */
 
   function applySnapshot(slot, snap) {
-    state.lastFrameAt = Date.now();
-    state.lastSnapshotTs = snap.ts || 0;
-    if (state.connectionStatus !== 'ok') {
-      state.connectionStatus = 'ok';
-      updateConnectionBadge(slot);
-    }
     var rt = slot.querySelector('#sysRuntimeKv');
     if (!rt) return;
-    // Replace the placeholder rows (everything after the connection badge)
     var rows = [];
     rows.push(connectionBadge());
     rows.push(realRow('Go version', slot.dataset.goVersion || '—'));
@@ -215,153 +201,38 @@
     }
   }
 
-  function updateConnectionBadge(slot) {
-    var rt = slot.querySelector('#sysRuntimeKv');
-    if (!rt) return;
-    // Replace only the first row (connection badge)
-    var firstDt = rt.querySelector('dt');
-    if (!firstDt) return;
-    var firstRow = connectionBadge();
-    var tmp = document.createElement('div');
-    tmp.innerHTML = firstRow;
-    var firstDd = rt.querySelector('dd');
-    if (firstDd) {
-      firstDd.outerHTML = tmp.querySelector('dd').outerHTML;
-    }
+  /* ---------- subscription lifecycle ---------- */
+
+  function cleanup() {
+    state.unsubscribers.forEach(function (u) { try { u(); } catch (e) { /* ignore */ } });
+    state.unsubscribers = [];
   }
 
-  /* ---------- websocket ---------- */
-
-  function buildWsUrl() {
-    var proto = global.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var token = '';
-    try { token = localStorage.getItem('wx_token') || ''; } catch (e) { token = ''; }
-    return proto + '//' + global.location.host + '/ws/system?token=' + encodeURIComponent(token);
-  }
-
-  function connectWS(slot) {
-    if (state.ws) {
-      try { state.ws.close(); } catch (e) { /* ignore */ }
-    }
-    if (state.reconnectTimer) {
-      clearTimeout(state.reconnectTimer);
-      state.reconnectTimer = null;
-    }
-    state.connectionStatus = 'connecting';
-    updateConnectionBadge(slot);
-
-    var url = buildWsUrl();
-    var ws;
-    try {
-      ws = new WebSocket(url);
-    } catch (e) {
-      scheduleReconnect(slot);
-      return;
-    }
-    state.ws = ws;
-
-    ws.onopen = function () {
-      state.reconnectAttempt = 0;
-      // first snapshot will set state.connectionStatus = 'ok' via applySnapshot
-    };
-    ws.onmessage = function (e) {
-      try {
-        var snap = JSON.parse(e.data);
-        if (snap && snap.type === 'snapshot') applySnapshot(slot, snap);
-      } catch (err) {
-        if (global.console) console.error('system: bad frame', err);
-      }
-    };
-    ws.onerror = function () {
-      handleDisconnect(slot);
-    };
-    ws.onclose = function () {
-      handleDisconnect(slot);
-    };
-  }
-
-  /* Probe /api/system once per disconnect cycle to distinguish auth failure
-   * (401 after server restart) from transient network issues. Returns true if
-   * auth still looks valid (or probe itself failed for non-auth reasons) — in
-   * that case we proceed with the existing reconnect-with-backoff path.
-   * Returns false only when the probe definitively says 401. */
-  async function probeAuth() {
-    try {
-      var res = await global.WXApi.authJson('/api/system');
-      return true;
-    } catch (e) {
-      if (e && e.isAuth) return false;
-      // network / 500 / parse error — don't claim auth failure
-      return true;
-    }
-  }
-
-  async function handleDisconnect(slot) {
-    state.connectionStatus = 'connecting';
-    updateConnectionBadge(slot);
-
-    var authOk = await probeAuth();
-    if (!authOk) {
-      state.connectionStatus = 'auth_err';
-      updateConnectionBadge(slot);
-      return;
-    }
-
-    state.connectionStatus = 'err';
-    updateConnectionBadge(slot);
-    scheduleReconnect(slot);
-  }
-
-  function scheduleReconnect(slot) {
-    if (state.reconnectTimer) return;
-    var delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * Math.pow(2, state.reconnectAttempt));
-    state.reconnectAttempt++;
-    state.reconnectTimer = setTimeout(function () {
-      state.reconnectTimer = null;
-      connectWS(slot);
-    }, delay);
-  }
-
-  /* ---------- stale-frame watchdog ---------- */
-
-  function startWatchdog(slot) {
-    if (state.watchdogTimer) {
-      clearInterval(state.watchdogTimer);
-      state.watchdogTimer = null;
-    }
-    state.watchdogTimer = setInterval(function () {
-      if (state.connectionStatus === 'ok' && state.lastFrameAt > 0) {
-        var staleFor = Date.now() - state.lastFrameAt;
-        if (staleFor > STALE_THRESHOLD_MS) {
-          // Server missed > 3 ticks; treat as disconnect and force reconnect
-          if (state.ws) {
-            try { state.ws.close(); } catch (e) { /* ignore */ }
-          }
-        }
-      }
-    }, 2000);
+  function bindEvents(slot) {
+    if (!global.WXEvents) return;
+    state.unsubscribers.push(global.WXEvents.subscribe('system.snapshot', function (snap) {
+      applySnapshot(slot, snap);
+    }));
+    state.unsubscribers.push(global.WXEvents.onStatusChange(function () {
+      // 状态变化时,只需重渲 connectionBadge(第一行)
+      var rt = slot.querySelector('#sysRuntimeKv');
+      if (!rt) return;
+      var firstDd = rt.querySelector('dd');
+      if (!firstDd) return;
+      var tmp = document.createElement('div');
+      tmp.innerHTML = connectionBadge();
+      var newDd = tmp.querySelector('dd');
+      if (newDd) firstDd.outerHTML = newDd.outerHTML;
+    }));
   }
 
   /* ---------- boot ---------- */
 
   function render(slot) {
-    // Cleanup any prior render's state (router re-renders on every visit).
-    if (state.watchdogTimer) {
-      clearInterval(state.watchdogTimer);
-      state.watchdogTimer = null;
-    }
-    if (state.reconnectTimer) {
-      clearTimeout(state.reconnectTimer);
-      state.reconnectTimer = null;
-    }
-    if (state.ws) {
-      try { state.ws.close(); } catch (e) { /* ignore */ }
-      state.ws = null;
-    }
+    cleanup(); // router 重新进入时先清掉旧订阅
     slot.innerHTML = renderSkeleton();
     loadStatic(slot);
-    connectWS(slot);
-    startWatchdog(slot);
+    bindEvents(slot);
   }
 
   global.WXPages = global.WXPages || {};
