@@ -10,13 +10,15 @@ import (
 
 type Token struct {
 	Value     string `json:"value"`
+	Label     string `json:"label"`
 	ExpiresAt string `json:"expires_at"` // yyyy-MM-dd; empty = permanent
 }
 
 type Config struct {
-	ApiBaseUrl string  `json:"api_base_url"`
-	Tokens     []Token `json:"tokens"`
-	Port       int     `json:"port"`
+	ApiBaseUrl           string  `json:"api_base_url"`
+	Tokens               []Token `json:"tokens"`
+	Port                 int     `json:"port"`
+	HistoryRetentionDays int     `json:"history_retention_days"`
 }
 
 type Manager struct {
@@ -49,6 +51,38 @@ func Init(exePath string, binName string) error {
 		}
 		if err := json.Unmarshal(data, m.config); err != nil {
 			log.Printf("config: failed to parse %s, using defaults: %v", cfgPath, err)
+		}
+	}
+
+	// Backfill: empty token label → value's first 8 chars + "..."
+	raw, rerr := m.loadRawJson()
+	labelChanged := false
+	for i := range m.config.Tokens {
+		if m.config.Tokens[i].Label == "" {
+			v := m.config.Tokens[i].Value
+			if len(v) > 8 {
+				v = v[:8]
+			}
+			m.config.Tokens[i].Label = v + "..."
+			labelChanged = true
+		}
+	}
+
+	// Inject default for HistoryRetentionDays only if the raw file lacks the key.
+	retentionChanged := false
+	if rerr == nil {
+		if _, ok := raw["history_retention_days"]; !ok {
+			if m.config.HistoryRetentionDays == 0 {
+				m.config.HistoryRetentionDays = 30
+				retentionChanged = true
+			}
+		}
+	}
+
+	if labelChanged || retentionChanged {
+		data, _ := json.MarshalIndent(m.config, "", "  ")
+		if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+			log.Printf("config: failed to write backfilled config: %v", err)
 		}
 	}
 
@@ -103,6 +137,21 @@ func MigrateTokens(data []byte) ([]byte, bool, int) {
 		return nil, false, 0
 	}
 	return rewritten, true, legacyCount
+}
+
+// loadRawJson reads the raw config file and returns its top-level keys as
+// json.RawMessage values. Used by Init's backfill to probe whether a key
+// is explicitly set in the file (vs. simply defaulting to zero).
+func (m *Manager) loadRawJson() (map[string]json.RawMessage, error) {
+	data, err := os.ReadFile(m.path)
+	if err != nil {
+		return nil, err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func Get() *Config {
