@@ -134,7 +134,7 @@
                    '<button type="button" class="btn btn--sm btn--preset' + permanentActive + '" data-action="preset-permanent" data-idx="' + i + '">永久</button>' +
                  '</div>' +
                '</div>' +
-               '<div class="token-item__row token-item__row--label">' +
+               '<div class="token-item__row">' +
                  '<label class="token-item__expiry-label">显示名称</label>' +
                  '<input type="text" class="input" data-action="label" data-idx="' + i + '" value="' + escapeHtml(t.label || '') + '" placeholder="可选,默认取前 8 字符" maxlength="64">' +
                '</div>' +
