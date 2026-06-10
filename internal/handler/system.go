@@ -82,7 +82,7 @@ func (h *Handler) HandleSystemWS(c *gin.Context) {
 
 	// Send initial snapshot immediately so the client sees data on first
 	// frame, not after the next ticker fire.
-	if err := conn.WriteJSON(collectSnapshot()); err != nil {
+	if err := conn.WriteJSON(SystemHub.collectSnapshot(h.storage)); err != nil {
 		return
 	}
 

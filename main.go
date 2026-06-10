@@ -13,6 +13,7 @@ import (
     "wx_web_api/internal/buildinfo"
     "wx_web_api/internal/config"
     "wx_web_api/internal/handler"
+    "wx_web_api/internal/storage"
 
     "github.com/gin-gonic/gin"
 )
@@ -65,8 +66,15 @@ func main() {
         effectivePort = *port
     }
 
-    h := handler.New(effectivePwd)
-    go handler.SystemHub.Start(context.Background())
+    // Storage init: must succeed — DB is non-optional for the service.
+    store := &storage.Storage{}
+    if err := store.Init(filepath.Join(config.ExeDir, binName+".db")); err != nil {
+        log.Fatalf("storage init failed: %v", err)
+    }
+    defer store.Close()
+
+    h := handler.New(effectivePwd, store)
+    go handler.SystemHub.Start(context.Background(), store)
     settingsHandler := handler.NewSettingsHandler()
 
     gin.SetMode(gin.ReleaseMode)
@@ -118,6 +126,13 @@ func main() {
     // System info routes (session-authenticated)
     r.GET("/api/system", h.SessionAuth(), h.GetSystem)
     r.GET("/ws/system", h.SessionAuth(), h.HandleSystemWS)
+
+    // History routes (session-authenticated)
+    histGroup := r.Group("/api/history", h.SessionAuth())
+    {
+        histGroup.GET("", h.GetHistory)
+        histGroup.DELETE("", h.DeleteHistory)
+    }
 
     // External API: POST /wx (token-authenticated)
     r.POST("/wx", h.TokenAuth(), h.ParseWxURL)

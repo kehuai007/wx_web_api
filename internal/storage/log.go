@@ -41,10 +41,10 @@ type HistoryPage struct {
 	Items []RequestLog `json:"items"`
 }
 
-// startOfTodayMs returns the unix-millisecond timestamp of the start of the
+// StartOfTodayMs returns the unix-millisecond timestamp of the start of the
 // current local day. Kept here (storage package) because system.go's
 // collectSnapshot uses the same notion of "today" and must not drift.
-func startOfTodayMs() int64 {
+func StartOfTodayMs() int64 {
 	now := time.Now()
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	return start.UnixMilli()
@@ -57,7 +57,7 @@ func (q HistoryQuery) tsLowerBoundPtr() *int64 {
 		// empty: treat as 'all' for safety
 		return nil
 	case "today":
-		v := startOfTodayMs()
+		v := StartOfTodayMs()
 		return &v
 	case "7d":
 		v := time.Now().Add(-7 * 24 * time.Hour).UnixMilli()
