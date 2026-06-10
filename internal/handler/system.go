@@ -6,19 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"wx_web_api/internal/buildinfo"
 	"wx_web_api/internal/config"
 
 	"github.com/gin-gonic/gin"
 )
-
-// processStart is captured at package init and is the source of truth for
-// uptime. A package-level var (not a const-time expression) is required so that
-// the value reflects the moment the binary started, not the moment the source
-// was compiled.
-var processStart = time.Now() //nolint:gochecknoglobals
 
 // SystemData is the one-shot response of GET /api/system. It contains values
 // that do not change at runtime: build metadata, configured ports, paths, file
