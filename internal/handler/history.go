@@ -46,6 +46,7 @@ func (h *Handler) DeleteHistory(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "delete failed: " + err.Error()})
 			return
 		}
+		EventsHub.PublishLogDeleted(nil)
 		c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"deleted": n}})
 		return
 	}
@@ -69,6 +70,7 @@ func (h *Handler) DeleteHistory(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"code": 1, "msg": "delete failed: " + err.Error()})
 		return
 	}
+	EventsHub.PublishLogDeleted(ids)
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": gin.H{"deleted": n}})
 }
 
