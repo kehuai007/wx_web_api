@@ -44,6 +44,7 @@
     var btn = document.getElementById('logoutBtn');
     if (!btn) return;
     btn.addEventListener('click', function () {
+      if (global.WXEvents) global.WXEvents.stop();
       if (global.WXAuth) global.WXAuth.logout();
       if (global.location && global.location.pathname !== '/') {
         global.history.replaceState({}, '', '/');
@@ -88,6 +89,7 @@
         } else {
           global.history.replaceState({}, '', target);
         }
+        if (global.WXEvents) global.WXEvents.start();
       } catch (err) {
         if (errEl) errEl.textContent = err.message || '登录失败';
       }
@@ -111,6 +113,7 @@
     if (global.WXAuth && global.WXAuth.isLoggedIn()) {
       global.WXAuth.showApp();
       if (global.WXRouter) global.WXRouter.render();
+      if (global.WXEvents) global.WXEvents.start();
     } else {
       global.WXAuth.showLogin();
     }
