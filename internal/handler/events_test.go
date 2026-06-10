@@ -154,3 +154,88 @@ func TestEventsHub_PublishLog_NonBlockingWhenFull(t *testing.T) {
 func jsonUnmarshal(data []byte, v any) error {
 	return json.Unmarshal(data, v)
 }
+
+func TestEventsHub_PublishLogDeleted_BroadcastsIDs(t *testing.T) {
+	hub := newTestHub()
+	// 抑制 system.snapshot 干扰
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
+	ts := serveTestHub(hub)
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub.Start(ctx, nil)
+
+	c := dialTestHub(t, ts)
+	defer c.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	hub.PublishLogDeleted([]int64{12, 34, 56})
+
+	msg := readFrame(t, c, 2*time.Second)
+	var m struct {
+		Type string  `json:"type"`
+		IDs  []int64 `json:"ids"`
+	}
+	if err := jsonUnmarshal(msg, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m.Type != "log.deleted" {
+		t.Errorf("type=%q want log.deleted", m.Type)
+	}
+	if len(m.IDs) != 3 || m.IDs[0] != 12 || m.IDs[2] != 56 {
+		t.Errorf("ids=%v want [12 34 56]", m.IDs)
+	}
+}
+
+func TestEventsHub_PublishLogDeleted_NilIsClearAll(t *testing.T) {
+	hub := newTestHub()
+	// 抑制 system.snapshot 干扰
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
+	ts := serveTestHub(hub)
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub.Start(ctx, nil)
+
+	c := dialTestHub(t, ts)
+	defer c.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	hub.PublishLogDeleted(nil) // nil → "全清"信号
+
+	msg := readFrame(t, c, 2*time.Second)
+	var raw map[string]json.RawMessage
+	if err := jsonUnmarshal(msg, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if string(raw["type"]) != `"log.deleted"` {
+		t.Errorf("type=%s want log.deleted", raw["type"])
+	}
+	// null 在 JSON 中是 "null"
+	if string(raw["ids"]) != "null" {
+		t.Errorf("ids=%s want null (clear-all signal)", raw["ids"])
+	}
+}
+
+func TestEventsHub_PublishLogDeleted_EmptySliceIsNoOp(t *testing.T) {
+	hub := newTestHub()
+	// 不 Start,直接验证 PublishLogDeleted([]int64{}) 是 no-op
+	done := make(chan struct{})
+	go func() {
+		hub.PublishLogDeleted([]int64{})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("PublishLogDeleted blocked on empty slice")
+	}
+}
