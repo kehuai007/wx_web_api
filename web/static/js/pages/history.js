@@ -567,6 +567,8 @@
       if (state.data.items.length > state.size) {
         state.data.items.length = state.size;
       }
+      state.unreadHintVisible = false;
+      renderUnreadHint(slot);
       renderList(slot);
     } else {
       state.unreadHintVisible = true;
@@ -589,6 +591,8 @@
     var set = new Set(ids);
     state.data.items = state.data.items.filter(function (it) { return !set.has(it.id); });
     state.data.total = Math.max(0, state.data.total - ids.length);
+    state.unreadHintVisible = false;
+    renderUnreadHint(slot);
     renderList(slot);
   }
 
