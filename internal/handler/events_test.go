@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,4 +88,69 @@ func TestEventsHub_RegisterAndUnregister(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("expected 1 client after c1 close, got %d", n)
 	}
+}
+
+func TestEventsHub_PublishLog_BroadcastsToAllClients(t *testing.T) {
+	hub := newTestHub()
+	// 抑制 system.snapshot 干扰:把 ticker 调到 1h,本测试期间不会触发
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
+	ts := serveTestHub(hub)
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub.Start(ctx, nil) // 传 nil storage;logFanoutLoop 不依赖 storage
+	defer func() { time.Sleep(50 * time.Millisecond) }()
+
+	c1 := dialTestHub(t, ts)
+	c2 := dialTestHub(t, ts)
+	defer c1.Close()
+	defer c2.Close()
+	time.Sleep(50 * time.Millisecond) // 等 register 完成
+
+	hub.PublishLog(storage.RequestLog{ID: 42, Ts: 1000, Status: 0, Kind: "url"})
+
+	for i, c := range []*websocket.Conn{c1, c2} {
+		msg := readFrame(t, c, 2*time.Second)
+		var m struct {
+			Type string             `json:"type"`
+			Log  storage.RequestLog `json:"log"`
+		}
+		if err := jsonUnmarshal(msg, &m); err != nil {
+			t.Fatalf("client %d unmarshal: %v", i, err)
+		}
+		if m.Type != "log.new" {
+			t.Errorf("client %d: type=%q want log.new", i, m.Type)
+		}
+		if m.Log.ID != 42 {
+			t.Errorf("client %d: log.ID=%d want 42", i, m.Log.ID)
+		}
+	}
+}
+
+func TestEventsHub_PublishLog_NonBlockingWhenFull(t *testing.T) {
+	hub := newTestHub()
+	// 不调 Start,只直测 Publish 在缓冲满时不阻塞
+	// logCh 容量 256;塞满 256 条后再塞 1 条应在 <100ms 返回
+	for i := 0; i < 256; i++ {
+		hub.PublishLog(storage.RequestLog{ID: int64(i)})
+	}
+	done := make(chan struct{})
+	go func() {
+		hub.PublishLog(storage.RequestLog{ID: 999})
+		close(done)
+	}()
+	select {
+	case <-done:
+		// ok
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("PublishLog blocked when logCh full")
+	}
+}
+
+func jsonUnmarshal(data []byte, v any) error {
+	return json.Unmarshal(data, v)
 }
