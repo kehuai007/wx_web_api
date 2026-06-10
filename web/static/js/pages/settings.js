@@ -7,8 +7,8 @@
 (function (global) {
   'use strict';
 
-  var original = { apiBaseUrl: '', tokens: [] };
-  var current  = { apiBaseUrl: '', tokens: [] };
+  var original = { apiBaseUrl: '', tokens: [], historyRetentionDays: 0 };
+  var current  = { apiBaseUrl: '', tokens: [], historyRetentionDays: 0 };
   var tokenRevealed = {};
   var beforeUnloadBound = false;
 
@@ -65,18 +65,19 @@
 
   function isDirty() {
     if (original.apiBaseUrl !== current.apiBaseUrl) return true;
+    if ((original.historyRetentionDays || 0) !== (current.historyRetentionDays || 0)) return true;
     if (original.tokens.length !== current.tokens.length) return true;
     var sig = function (list) {
       return list.map(function (t) {
-        return [t.value || '', t.expires_at || ''];
+        return [t.value || '', t.label || '', t.expires_at || ''];
       }).sort(function (a, b) {
-        return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0);
+        return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0));
       });
     };
     var a = sig(original.tokens);
     var b = sig(current.tokens);
     for (var i = 0; i < a.length; i++) {
-      if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return true;
+      if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1] || a[i][2] !== b[i][2]) return true;
     }
     return false;
   }
@@ -133,6 +134,10 @@
                    '<button type="button" class="btn btn--sm btn--preset' + permanentActive + '" data-action="preset-permanent" data-idx="' + i + '">永久</button>' +
                  '</div>' +
                '</div>' +
+               '<div class="token-item__row token-item__row--label">' +
+                 '<label class="token-item__expiry-label">显示名称</label>' +
+                 '<input type="text" class="input" data-action="label" data-idx="' + i + '" value="' + escapeHtml(t.label || '') + '" placeholder="可选,默认取前 8 字符" maxlength="64">' +
+               '</div>' +
                (badge ? '<div class="token-item__badge">' + badge + '</div>' : '') +
              '</div>';
     }).join('');
@@ -151,7 +156,7 @@
         return false;
       }
     }
-    current.tokens.push({ value: token, expires_at: '' });
+    current.tokens.push({ value: token, label: '', expires_at: '' });
     renderTokens();
     updateSaveButton();
     return true;
@@ -208,8 +213,10 @@
     var apiBaseUrl = (document.getElementById('settingsApiBaseUrl').value || '').trim() ||
                      'http://127.0.0.1:2022';
     current.apiBaseUrl = apiBaseUrl;
+    var retentionInput = document.getElementById('settingsRetentionDays');
+    current.historyRetentionDays = retentionInput ? (Number(retentionInput.value) || 0) : 0;
     var tokensToSend = current.tokens.map(function (t) {
-      return { value: t.value, expires_at: t.expires_at || '' };
+      return { value: t.value, label: t.label || '', expires_at: t.expires_at || '' };
     });
 
     var btn = document.getElementById('settingsSaveBtn');
@@ -218,12 +225,17 @@
     try {
       var res = await global.WXApi.authJson('/api/config', {
         method: 'PUT',
-        body: JSON.stringify({ api_base_url: apiBaseUrl, tokens: tokensToSend })
+        body: JSON.stringify({
+          api_base_url: apiBaseUrl,
+          tokens: tokensToSend,
+          history_retention_days: current.historyRetentionDays
+        })
       });
       if (res.data && res.data.code === 0) {
         original = {
           apiBaseUrl: apiBaseUrl,
-          tokens: tokensToSend.map(function (t) { return { value: t.value, expires_at: t.expires_at }; })
+          historyRetentionDays: current.historyRetentionDays,
+          tokens: tokensToSend.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
         };
         if (global.WXToast) global.WXToast('保存成功', 'success');
       } else {
@@ -240,10 +252,13 @@
   function cancel() {
     current = {
       apiBaseUrl: original.apiBaseUrl,
-      tokens: original.tokens.map(function (t) { return { value: t.value, expires_at: t.expires_at }; })
+      historyRetentionDays: original.historyRetentionDays,
+      tokens: original.tokens.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
     };
     var input = document.getElementById('settingsApiBaseUrl');
     if (input) input.value = original.apiBaseUrl;
+    var retentionInput = document.getElementById('settingsRetentionDays');
+    if (retentionInput) retentionInput.value = String(original.historyRetentionDays);
     tokenRevealed = {};
     renderTokens();
     updateSaveButton();
@@ -266,17 +281,34 @@
       var toks = Array.isArray(res.data.data.tokens) ? res.data.data.tokens : [];
       original = {
         apiBaseUrl: res.data.data.api_base_url || 'http://127.0.0.1:2022',
-        tokens: toks.map(function (t) { return { value: t.value, expires_at: t.expires_at || '' }; })
+        historyRetentionDays: Number(res.data.data.history_retention_days) || 0,
+        tokens: toks.map(function (t) { return { value: t.value, label: t.label || '', expires_at: t.expires_at || '' }; })
       };
       current = {
         apiBaseUrl: original.apiBaseUrl,
-        tokens: original.tokens.map(function (t) { return { value: t.value, expires_at: t.expires_at }; })
+        historyRetentionDays: original.historyRetentionDays,
+        tokens: original.tokens.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
       };
       var input = document.getElementById('settingsApiBaseUrl');
       if (input) input.value = current.apiBaseUrl;
+      var retentionInput = document.getElementById('settingsRetentionDays');
+      if (retentionInput) retentionInput.value = String(current.historyRetentionDays);
       renderTokens();
       updateSaveButton();
+      fetchRecordCount();
     }
+  }
+
+  function fetchRecordCount() {
+    var span = document.getElementById('settingsRecordCount');
+    if (!span || !global.WXApi || !global.WXApi.authJson) return;
+    global.WXApi.authJson('/api/history?range=all&size=1').then(function (res) {
+      if (span && res && res.data && res.data.code === 0 && res.data.data && typeof res.data.data.total === 'number') {
+        span.textContent = res.data.data.total.toLocaleString();
+      }
+    }, function () {
+      /* leave as '—' on failure */
+    });
   }
 
   function render(slot) {
@@ -302,6 +334,19 @@
         '</div>' +
         '<div id="settingsTokenList" class="token-list"></div>' +
         '<div class="token-item__count" id="settingsTokenCount"></div>' +
+      '</div>' +
+
+      '<div class="card">' +
+        '<div class="card__title">数据保留</div>' +
+        '<dl class="kv">' +
+          '<dt>历史保留天数</dt><dd>' +
+            '<input type="number" class="input" id="settingsRetentionDays" min="0" max="365" step="1" value="0">' +
+            ' <span class="kv__sub">0 = 永久</span>' +
+          '</dd>' +
+          '<dt>当前已记录</dt><dd>' +
+            '<span id="settingsRecordCount">—</span> <span class="kv__sub">条</span>' +
+          '</dd>' +
+        '</dl>' +
       '</div>' +
 
       '<div class="settings-actions">' +
@@ -336,6 +381,15 @@
       setExpiry(idx, input.value);
     });
 
+    list.addEventListener('input', function (e) {
+      var input = e.target.closest('input[data-action="label"]');
+      if (!input) return;
+      var idx = Number(input.getAttribute('data-idx'));
+      if (idx < 0 || idx >= current.tokens.length) return;
+      current.tokens[idx].label = input.value;
+      updateSaveButton();
+    });
+
     document.getElementById('settingsAddTokenBtn').addEventListener('click', function () {
       var input = document.getElementById('settingsNewToken');
       if (addToken(input.value)) input.value = '';
@@ -350,6 +404,13 @@
       current.apiBaseUrl = e.currentTarget.value.trim();
       updateSaveButton();
     });
+    var retentionInput = document.getElementById('settingsRetentionDays');
+    if (retentionInput) {
+      retentionInput.addEventListener('input', function (e) {
+        current.historyRetentionDays = Number(e.currentTarget.value) || 0;
+        updateSaveButton();
+      });
+    }
     document.getElementById('settingsCancelBtn').addEventListener('click', cancel);
     document.getElementById('settingsSaveBtn').addEventListener('click', save);
 
