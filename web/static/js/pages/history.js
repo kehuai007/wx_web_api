@@ -17,6 +17,7 @@
     expanded: new Set(),
     selected: new Set(),
     abortCtrl: null,
+    loadId: 0,
     tokenLabels: [],       // populated from /api/config
   };
 
@@ -24,6 +25,27 @@
     var div = document.createElement('div');
     div.textContent = s == null ? '' : String(s);
     return div.innerHTML;
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () { return fallbackCopy(text); });
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'absolute';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
   }
 
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
@@ -207,8 +229,17 @@
     list.querySelectorAll('.history-row__menu').forEach(function (btn) {
       btn.addEventListener('click', function (e) { e.stopPropagation(); oneDelete(slot, parseInt(btn.getAttribute('data-id'), 10)); });
     });
-    list.querySelectorAll('.history-row__body').forEach(function (el) {
+    list.querySelectorAll('.history-row').forEach(function (el) {
       el.addEventListener('click', function () { toggleExpand(parseInt(el.getAttribute('data-id'), 10), slot); });
+    });
+    list.querySelectorAll('button[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var text = btn.getAttribute('data-copy') || '';
+        copyToClipboard(text).then(function (ok) {
+          if (global.WXToast) global.WXToast(ok !== false ? '已复制' : '复制失败', ok !== false ? 'success' : 'error');
+        });
+      });
     });
 
     pag.innerHTML = renderPagination(data.total, data.page, data.size);
@@ -239,7 +270,7 @@
       var short = r.msg.length > 40 ? r.msg.slice(0, 40) + '…' : r.msg;
       statusInner += ' <span class="kv__sub" title="' + escapeHtml(r.msg) + '">' + escapeHtml(short) + '</span>';
     }
-    var html = '<div class="history-row__body" data-id="' + r.id + '">' +
+    var html = '<div class="history-row" data-id="' + r.id + '">' +
       '<div class="history-row__check">' +
         '<input type="checkbox" data-id="' + r.id + '" ' + (checked ? 'checked' : '') + '>' +
       '</div>' +
@@ -412,10 +443,13 @@
     var url = buildQuery();
     var prevData = state.data;
     state.data = null;
+    state.loadId++;
+    var myLoadId = state.loadId;
     renderList(slot);
 
     global.WXApi.authJson(url)
       .then(function (res) {
+        if (myLoadId !== state.loadId) return;
         state.abortCtrl = null;
         if (res.data && res.data.code === 0 && res.data.data) {
           state.data = res.data.data;
@@ -427,6 +461,7 @@
         }
       })
       .catch(function (e) {
+        if (myLoadId !== state.loadId) return;
         if (e && e.isAuth) return;
         state.data = prevData;
         renderList(slot);
