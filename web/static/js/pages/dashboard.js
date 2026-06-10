@@ -1,7 +1,7 @@
 /* Dashboard page — overview with stats and recent requests.
  * - Token count: /api/config (live).
- * - Recent requests: last 10 rows from /api/history?range=all (one-shot
- *   fetch on render; click "刷新" or revisit the page to refresh).
+ * - Recent requests: live via WXEvents `log.new` (initial snapshot from
+ *   /api/history; new entries unshifted to top, capped at 10).
  */
 
 (function (global) {
@@ -80,7 +80,10 @@
     try {
       var res = await global.WXApi.authJson('/api/history?range=all&page=1&size=' + RECENT_SIZE);
       if (res.data && res.data.code === 0 && res.data.data) {
-        recent = (res.data.data.items || []).slice();
+        var fetched = res.data.data.items || [];
+        var fetchedIds = new Set(fetched.map(function (it) { return it.id; }));
+        var fresher = recent.filter(function (it) { return !fetchedIds.has(it.id); });
+        recent = fresher.concat(fetched).slice(0, RECENT_SIZE);
         renderRecent(slot);
       } else {
         body.innerHTML = '<div class="result-msg">加载失败: ' + escapeHtml((res.data && res.data.msg) || '未知错误') + '</div>';
