@@ -292,3 +292,56 @@ func TestEventsHub_PublishConfigChanged_NonBlockingWhenFull(t *testing.T) {
 		t.Fatal("PublishConfigChanged blocked when configCh full")
 	}
 }
+
+func TestEventsHub_SystemSnapshot_FiresOnTicker(t *testing.T) {
+	hub := newTestHub()
+	// 把 ticker 间隔缩到 50ms,让测试在 1s 内完成
+	old := systemTickerInterval
+	systemTickerInterval = 50 * time.Millisecond
+	defer func() { systemTickerInterval = old }()
+
+	ts := serveTestHub(hub)
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub.Start(ctx, nil)
+
+	c := dialTestHub(t, ts)
+	defer c.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	// 等 200ms,期望至少收到 1 帧
+	deadline := time.Now().Add(2 * time.Second)
+	count := 0
+	for time.Now().Before(deadline) && count == 0 {
+		msg := readFrame(t, c, 500*time.Millisecond)
+		var m struct {
+			Type string `json:"type"`
+		}
+		if err := jsonUnmarshal(msg, &m); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if m.Type == "system.snapshot" {
+			count++
+		}
+	}
+	if count == 0 {
+		t.Fatal("no system.snapshot frame received within 2s")
+	}
+}
+
+func TestEventsHub_Snapshot_ReturnsCurrentValues(t *testing.T) {
+	hub := newTestHub()
+	snap := hub.Snapshot()
+	if snap.Type != "system.snapshot" {
+		t.Errorf("type=%q want system.snapshot", snap.Type)
+	}
+	if snap.Goroutines < 1 {
+		t.Errorf("goroutines=%d want >=1", snap.Goroutines)
+	}
+	// 内存 Sys 必然 > 0
+	if snap.Mem.Sys == 0 {
+		t.Error("mem.sys = 0, want >0")
+	}
+}
