@@ -121,14 +121,14 @@
     var reqForLog = {
       method: 'POST',
       url: endpoint,
-      headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': token, 'Content-Type': 'application/json', 'X-Wx-Source': 'admin_test' },
       body: body
     };
     var res, networkError = false, networkMsg = '';
     try {
       res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Authorization': token, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': token, 'Content-Type': 'application/json', 'X-Wx-Source': 'admin_test' },
         body: JSON.stringify(body)
       });
     } catch (e) {
