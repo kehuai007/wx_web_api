@@ -239,3 +239,56 @@ func TestEventsHub_PublishLogDeleted_EmptySliceIsNoOp(t *testing.T) {
 		t.Fatal("PublishLogDeleted blocked on empty slice")
 	}
 }
+
+func TestEventsHub_PublishConfigChanged_Broadcasts(t *testing.T) {
+	hub := newTestHub()
+	// 抑制 system.snapshot 干扰
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
+	ts := serveTestHub(hub)
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hub.Start(ctx, nil)
+
+	c := dialTestHub(t, ts)
+	defer c.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	hub.PublishConfigChanged()
+
+	msg := readFrame(t, c, 2*time.Second)
+	var m struct {
+		Type string `json:"type"`
+		Ts   int64  `json:"ts"`
+	}
+	if err := jsonUnmarshal(msg, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m.Type != "config.changed" {
+		t.Errorf("type=%q want config.changed", m.Type)
+	}
+	if m.Ts <= 0 {
+		t.Errorf("ts=%d want positive", m.Ts)
+	}
+}
+
+func TestEventsHub_PublishConfigChanged_NonBlockingWhenFull(t *testing.T) {
+	hub := newTestHub()
+	for i := 0; i < 16; i++ {
+		hub.PublishConfigChanged()
+	}
+	done := make(chan struct{})
+	go func() {
+		hub.PublishConfigChanged()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("PublishConfigChanged blocked when configCh full")
+	}
+}
