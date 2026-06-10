@@ -90,6 +90,9 @@ func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
 		c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: err.Error()})
 		return
 	}
+	// 保存成功后立即广播,前端收到时本会话响应可能还没到达(200 通常 <1ms),
+	// ignoreConfigChangedUntil 窗口(2s)会覆盖这段本地时延,避免自我二次确认弹窗。
+	EventsHub.PublishConfigChanged()
 	c.JSON(http.StatusOK, model.SimpleResponse{Code: 0, Msg: "success"})
 }
 
