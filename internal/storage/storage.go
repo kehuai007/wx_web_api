@@ -149,7 +149,7 @@ func (s *Storage) QueryHistory(q HistoryQuery) (*HistoryPage, error) {
 		return nil, fmt.Errorf("rows: %w", err)
 	}
 
-	return &HistoryPage{Total: int(total), Page: page, Size: size, Items: items}, nil
+	return &HistoryPage{Total: total, Page: page, Size: size, Items: items}, nil
 }
 
 func jsonRawOrNull(s string) json.RawMessage {
