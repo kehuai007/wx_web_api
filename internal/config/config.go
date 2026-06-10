@@ -40,7 +40,12 @@ func Init(exePath string, binName string) error {
 		Port:       13335,
 	}}
 
+	// Track whether the config file existed when Init ran. Used to decide
+	// whether to inject the history_retention_days default: a fresh install
+	// (no file) is treated the same as "file exists but lacks the key".
+	fileExisted := false
 	if data, err := os.ReadFile(cfgPath); err == nil {
+		fileExisted = true
 		if rewritten, migrated, n := MigrateTokens(data); migrated {
 			if err := os.WriteFile(cfgPath, rewritten, 0644); err != nil {
 				log.Printf("config: failed to write migrated config: %v", err)
@@ -68,14 +73,24 @@ func Init(exePath string, binName string) error {
 		}
 	}
 
-	// Inject default for HistoryRetentionDays only if the raw file lacks the key.
+	// Inject default for HistoryRetentionDays only if the raw file lacks the key
+	// (or the file doesn't exist at all — fresh install). An admin's explicit 0
+	// (meaning "permanent") is preserved because we only inject when the key is
+	// absent.
 	retentionChanged := false
-	if rerr == nil {
+	switch {
+	case fileExisted && rerr == nil:
 		if _, ok := raw["history_retention_days"]; !ok {
 			if m.config.HistoryRetentionDays == 0 {
 				m.config.HistoryRetentionDays = 30
 				retentionChanged = true
 			}
+		}
+	case !fileExisted:
+		// Fresh install (no file at all): inject the 30-day default.
+		if m.config.HistoryRetentionDays == 0 {
+			m.config.HistoryRetentionDays = 30
+			retentionChanged = true
 		}
 	}
 
