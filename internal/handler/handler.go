@@ -281,6 +281,9 @@ func (h *Handler) writeLog(c *gin.Context, t0 time.Time, tokenLabel, source, kin
 		}
 		if err := h.storage.LogRequest(rec); err != nil {
 			log.Printf("[storage] LogRequest failed: %v", err)
+		} else {
+			// DB 写完才 publish,保证前端拿到的 row 一定能从历史接口读回
+			EventsHub.PublishLog(*rec)
 		}
 	}()
 }
