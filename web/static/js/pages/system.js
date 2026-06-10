@@ -19,6 +19,7 @@
     ws: null,
     reconnectAttempt: 0,
     reconnectTimer: null,
+    watchdogTimer: null,
     lastSnapshotTs: 0,
     lastFrameAt: 0,
     connectionStatus: 'connecting' // 'ok' | 'connecting' | 'err'
@@ -33,7 +34,7 @@
   function pad2(n) { return n < 10 ? '0' + n : '' + n; }
 
   function formatBytes(n) {
-    if (n == null) return '—';
+    if (n == null || n === 0) return '—';
     if (n < 1024) return n + ' B';
     if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
     if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
@@ -141,7 +142,10 @@
       realRow('Token 数', String(d.token_count)) +
       realRow('配置文件', d.config_path || '—') +
       realRow('DB 路径', d.db_path || '—') +
-      realRow('DB 大小', d.db_size > 0 ? formatBytes(d.db_size) : '—');
+      realRow('DB 大小', formatBytes(d.db_size));
+
+    slot.dataset.goVersion = d.go_version || '';
+    slot.dataset.goOsArch = (d.goos || '') + ' / ' + (d.goarch || '');
   }
 
   async function loadStatic(slot) {
@@ -289,7 +293,11 @@
   /* ---------- stale-frame watchdog ---------- */
 
   function startWatchdog(slot) {
-    setInterval(function () {
+    if (state.watchdogTimer) {
+      clearInterval(state.watchdogTimer);
+      state.watchdogTimer = null;
+    }
+    state.watchdogTimer = setInterval(function () {
       if (state.connectionStatus === 'ok' && state.lastFrameAt > 0) {
         var staleFor = Date.now() - state.lastFrameAt;
         if (staleFor > STALE_THRESHOLD_MS) {
@@ -305,6 +313,19 @@
   /* ---------- boot ---------- */
 
   function render(slot) {
+    // Cleanup any prior render's state (router re-renders on every visit).
+    if (state.watchdogTimer) {
+      clearInterval(state.watchdogTimer);
+      state.watchdogTimer = null;
+    }
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+    if (state.ws) {
+      try { state.ws.close(); } catch (e) { /* ignore */ }
+      state.ws = null;
+    }
     slot.innerHTML = renderSkeleton();
     loadStatic(slot);
     connectWS(slot);
