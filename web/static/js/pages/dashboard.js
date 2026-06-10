@@ -8,6 +8,8 @@
   'use strict';
 
   var RECENT_SIZE = 10;
+  var recent = [];
+  var unsubscribers = [];
 
   function escapeHtml(s) {
     var div = document.createElement('div');
@@ -78,7 +80,8 @@
     try {
       var res = await global.WXApi.authJson('/api/history?range=all&page=1&size=' + RECENT_SIZE);
       if (res.data && res.data.code === 0 && res.data.data) {
-        body.innerHTML = renderRecentRows(res.data.data.items || []);
+        recent = (res.data.data.items || []).slice();
+        renderRecent(slot);
       } else {
         body.innerHTML = '<div class="result-msg">加载失败: ' + escapeHtml((res.data && res.data.msg) || '未知错误') + '</div>';
       }
@@ -86,6 +89,14 @@
       if (e && e.isAuth) return;
       body.innerHTML = '<div class="result-msg">加载失败: ' + escapeHtml(e.message || '网络错误') + '</div>';
     }
+  }
+
+  function renderRecent(slot) {
+    var card = slot.querySelector('[data-role="recent-card"]');
+    if (!card) return;
+    var body = card.querySelector('[data-role="recent-body"]');
+    if (!body) return;
+    body.innerHTML = renderRecentRows(recent);
   }
 
   async function loadTokenCount(slot) {
@@ -99,7 +110,26 @@
     } catch (e) { /* leave the dash placeholder */ }
   }
 
+  function bindEvents(slot) {
+    if (!global.WXEvents) return;
+    unsubscribers.push(global.WXEvents.subscribe('log.new', function (frame) {
+      if (!frame || !frame.log) return;
+      recent.unshift(frame.log);
+      if (recent.length > RECENT_SIZE) recent.length = RECENT_SIZE;
+      renderRecent(slot);
+    }));
+    unsubscribers.push(global.WXEvents.subscribe('config.changed', function () {
+      loadTokenCount(slot);
+    }));
+  }
+
+  function cleanup() {
+    unsubscribers.forEach(function (u) { try { u(); } catch (e) { /* ignore */ } });
+    unsubscribers = [];
+  }
+
   function render(slot) {
+    cleanup();
     slot.innerHTML =
       '<div class="section-title">概览</div>' +
 
@@ -145,6 +175,7 @@
 
     loadTokenCount(slot);
     loadRecent(slot);
+    bindEvents(slot);
   }
 
   global.WXPages = global.WXPages || {};
