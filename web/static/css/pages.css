@@ -474,6 +474,8 @@
 }
 .conn-badge--err { color: var(--danger); }
 .conn-badge--err .conn-badge__dot { background: var(--danger); }
+.conn-badge--auth_err { color: var(--danger); }
+.conn-badge--auth_err .conn-badge__dot { background: var(--danger); }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }

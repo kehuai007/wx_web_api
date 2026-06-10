@@ -287,7 +287,6 @@
   async function probeAuth() {
     try {
       var res = await global.WXApi.authJson('/api/system');
-      // res.status === 200 here means the session token is accepted
       return true;
     } catch (e) {
       if (e && e.isAuth) return false;
@@ -297,8 +296,6 @@
   }
 
   async function handleDisconnect(slot) {
-    // Show "连接中..." (yellow) while we probe, so the user sees we're
-    // investigating rather than just hammering reconnects.
     state.connectionStatus = 'connecting';
     updateConnectionBadge(slot);
 
@@ -306,7 +303,7 @@
     if (!authOk) {
       state.connectionStatus = 'auth_err';
       updateConnectionBadge(slot);
-      return; // do not schedule reconnect
+      return;
     }
 
     state.connectionStatus = 'err';
