@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,9 +65,34 @@ func (h *Handler) GetSystem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "data": data})
 }
 
-// HandleSystemWS is implemented in broadcaster.go (Task 3). Stub here to
-// keep the file compiling if main.go references it before Task 3 lands.
-// REMOVE THIS STUB WHEN TASK 3 LANDS.
+// HandleSystemWS upgrades the HTTP connection to a WebSocket and registers
+// the connection with SystemHub. The first frame sent is an immediate
+// SystemSnapshot so the client does not have to wait up to 2 seconds for
+// the first tick. After that, the goroutine blocks reading from the
+// connection; any read error (which on a WebSocket means the client has
+// disconnected) triggers cleanup via deferred unregister.
 func (h *Handler) HandleSystemWS(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"code": 1, "msg": "ws not yet wired"})
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("ws upgrade failed: %v", err)
+		return
+	}
+	SystemHub.register(conn)
+	defer SystemHub.unregister(conn)
+
+	// Send initial snapshot immediately so the client sees data on first
+	// frame, not after the next ticker fire.
+	if err := conn.WriteJSON(collectSnapshot()); err != nil {
+		return
+	}
+
+	// Block reading from the connection. We do not consume any client
+	// messages — this is a server-push channel — but reading is the only
+	// way to detect client disconnect on a WebSocket. NextReader returns
+	// an error when the client closes; we then unregister and return.
+	for {
+		if _, _, err := conn.NextReader(); err != nil {
+			return
+		}
+	}
 }

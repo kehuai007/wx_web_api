@@ -1,6 +1,7 @@
 package main
 
 import (
+    "context"
     "embed"
     "flag"
     "fmt"
@@ -65,6 +66,7 @@ func main() {
     }
 
     h := handler.New(effectivePwd)
+    go handler.SystemHub.Start(context.Background())
     settingsHandler := handler.NewSettingsHandler()
 
     gin.SetMode(gin.ReleaseMode)
