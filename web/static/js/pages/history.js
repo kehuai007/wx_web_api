@@ -19,6 +19,8 @@
     abortCtrl: null,
     loadId: 0,
     tokenLabels: [],       // populated from /api/config
+    unreadHintVisible: false,
+    unsubscribers: [],
   };
 
   function escapeHtml(s) {
@@ -122,6 +124,7 @@
         '</div>' +
         '<div class="history-summary">' +
           '<span data-role="summary-text">加载中…</span>' +
+          '<span data-role="unread-hint" class="badge" hidden></span>' +
           '<span>' +
             '<button class="btn btn--secondary" data-role="batch-delete" disabled>批量删除</button> ' +
           '</span>' +
@@ -175,6 +178,21 @@
 
     var batchBtn = slot.querySelector('[data-role="batch-delete"]');
     batchBtn.addEventListener('click', function () { batchDelete(slot); });
+
+    var hint = slot.querySelector('[data-role="unread-hint"]');
+    if (hint) {
+      hint.style.cursor = 'pointer';
+      hint.addEventListener('click', function () {
+        state.unreadHintVisible = false;
+        if (state.page > 1) {
+          state.page = 1;
+        } else {
+          state.filter = { range: 'today', kind: 'all', status: 'all', token: 'all', q: '' };
+          syncFilterUI(slot);
+        }
+        load(slot);
+      });
+    }
   }
 
   function syncFilterUI(slot) {
@@ -495,13 +513,122 @@
       .catch(function () { /* non-fatal */ });
   }
 
+  /* ---------- realtime events ---------- */
+
+  function tsLowerBoundMs(range) {
+    var d = new Date();
+    if (range === 'today') {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    }
+    if (range === '7d') return d.getTime() - 7 * 86400000;
+    if (range === '30d') return d.getTime() - 30 * 86400000;
+    return 0; // 'all' or unknown
+  }
+
+  function statusValue(s) {
+    if (s === 'ok') return 0;
+    if (s === 'err') return 1;
+    if (s === 'auth_err') return 401;
+    return null;
+  }
+
+  function logMatchesFilter(log, filter) {
+    if (!log) return false;
+    if (filter.kind && filter.kind !== 'all' && log.kind !== filter.kind) return false;
+    if (filter.token && filter.token !== 'all' && log.token_label !== filter.token) return false;
+    if (filter.status && filter.status !== 'all') {
+      var sv = statusValue(filter.status);
+      if (sv !== null && log.status !== sv) return false;
+    }
+    if (filter.range && filter.range !== 'all') {
+      var lb = tsLowerBoundMs(filter.range);
+      if (lb > 0 && log.ts < lb) return false;
+    }
+    if (filter.q) {
+      var reqStr;
+      try { reqStr = JSON.stringify(log.request || ''); } catch (e) { reqStr = ''; }
+      if (reqStr.indexOf(filter.q) === -1) return false;
+    }
+    return true;
+  }
+
+  function applyLogNew(slot, frame) {
+    if (!frame || !frame.log || !state.data) return;
+    var log = frame.log;
+    state.data.total += 1;
+
+    if (state.page > 1) {
+      state.unreadHintVisible = true;
+      renderUnreadHint(slot);
+      return;
+    }
+    if (logMatchesFilter(log, state.filter)) {
+      state.data.items.unshift(log);
+      if (state.data.items.length > state.size) {
+        state.data.items.length = state.size;
+      }
+      renderList(slot);
+    } else {
+      state.unreadHintVisible = true;
+      renderUnreadHint(slot);
+    }
+  }
+
+  function applyLogDeleted(slot, frame) {
+    if (!frame || !state.data) return;
+    var ids = frame.ids;
+    if (!ids || (Array.isArray(ids) && ids.length === 0)) {
+      // 全清信号
+      state.data.items = [];
+      state.data.total = 0;
+      state.unreadHintVisible = false;
+      renderList(slot);
+      renderUnreadHint(slot);
+      return;
+    }
+    var set = new Set(ids);
+    state.data.items = state.data.items.filter(function (it) { return !set.has(it.id); });
+    state.data.total = Math.max(0, state.data.total - ids.length);
+    renderList(slot);
+  }
+
+  function renderUnreadHint(slot) {
+    var el = slot.querySelector('[data-role="unread-hint"]');
+    if (!el) return;
+    if (state.unreadHintVisible) {
+      el.hidden = false;
+      var text = state.page > 1
+        ? '有 1 条新记录,点此查看第 1 页'
+        : '有 1 条新记录不符合当前筛选,点此清空筛选查看';
+      el.textContent = text;
+    } else {
+      el.hidden = true;
+    }
+  }
+
+  function bindEvents(slot) {
+    if (!global.WXEvents) return;
+    state.unsubscribers.push(global.WXEvents.subscribe('log.new', function (frame) { applyLogNew(slot, frame); }));
+    state.unsubscribers.push(global.WXEvents.subscribe('log.deleted', function (frame) { applyLogDeleted(slot, frame); }));
+    state.unsubscribers.push(global.WXEvents.subscribe('config.changed', function () {
+      loadTokenLabels().then(function () { populateTokenDropdown(slot); });
+    }));
+  }
+
+  function cleanup() {
+    state.unsubscribers.forEach(function (u) { try { u(); } catch (e) { /* ignore */ } });
+    state.unsubscribers = [];
+  }
+
   /* ---------- render ---------- */
 
   function render(slot) {
+    cleanup();
     if (state.abortCtrl) { state.abortCtrl.abort(); state.abortCtrl = null; }
     state.data = null;
     state.expanded.clear();
     state.selected.clear();
+    state.unreadHintVisible = false;
     slot.innerHTML = renderSkeleton();
     syncFilterUI(slot);
     populateTokenDropdown(slot);
@@ -512,6 +639,7 @@
     });
     loadTokenLabels().then(function () { populateTokenDropdown(slot); });
     load(slot);
+    bindEvents(slot);
   }
 
   global.WXPages = global.WXPages || {};
