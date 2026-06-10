@@ -2,6 +2,12 @@
  * Loads /api/config, renders form, supports add/remove/copy/reveal tokens
  * and per-row expiration date (manual + 5 quick presets + status badge),
  * dirty tracking, save/cancel, beforeunload prompt.
+ *
+ * 实时事件(Task 15):
+ * - 订阅 WXEvents 'config.changed',在表单 dirty 时顶部出现"配置已被其他会话更新"
+ *   提示条;clean 时静默 reload。
+ * - 保存成功后设置 2s 的 ignoreConfigChangedUntil 窗口,抑制自身广播。
+ * - render 入口先 cleanup 旧订阅,避免 router 切换时回调打到 detach 的 slot。
  */
 
 (function (global) {
@@ -11,6 +17,13 @@
   var current  = { apiBaseUrl: '', tokens: [], historyRetentionDays: 0 };
   var tokenRevealed = {};
   var beforeUnloadBound = false;
+
+  var state = {
+    config: null,                  // 最近一次拉取的 config(用于 reload + 自我忽略后回填)
+    dirty: false,                  // 表单是否被改(sticky,任何 input 都置 true)
+    ignoreConfigChangedUntil: 0,   // 自我保存后抑制 config.changed 的截止时间戳
+    unsubscribers: [],
+  };
 
   var PRESETS = [
     { label: '7天',  days: 7 },
@@ -157,6 +170,7 @@
       }
     }
     current.tokens.push({ value: token, label: '', expires_at: '' });
+    state.dirty = true;
     renderTokens();
     updateSaveButton();
     return true;
@@ -237,6 +251,15 @@
           historyRetentionDays: current.historyRetentionDays,
           tokens: tokensToSend.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
         };
+        // 同步本地 config 缓存,后续 reloadFromServer 时有 baseline;
+        // 设 2s 忽略窗口,避免自身保存触发的 config.changed 再次弹出"已被其他会话更新"。
+        state.config = {
+          api_base_url: apiBaseUrl,
+          history_retention_days: current.historyRetentionDays,
+          tokens: tokensToSend.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
+        };
+        state.ignoreConfigChangedUntil = Date.now() + 2000;
+        state.dirty = false;
         if (global.WXToast) global.WXToast('保存成功', 'success');
       } else {
         if (global.WXToast) global.WXToast((res.data && res.data.msg) || '保存失败', 'error');
@@ -260,6 +283,7 @@
     var retentionInput = document.getElementById('settingsRetentionDays');
     if (retentionInput) retentionInput.value = String(original.historyRetentionDays);
     tokenRevealed = {};
+    state.dirty = false;
     renderTokens();
     updateSaveButton();
   }
@@ -275,7 +299,7 @@
     });
   }
 
-  async function load() {
+  async function loadConfig() {
     var res = await global.WXApi.authJson('/api/config');
     if (res.data && res.data.code === 0 && res.data.data) {
       var toks = Array.isArray(res.data.data.tokens) ? res.data.data.tokens : [];
@@ -289,12 +313,18 @@
         historyRetentionDays: original.historyRetentionDays,
         tokens: original.tokens.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
       };
+      state.config = {
+        api_base_url: original.apiBaseUrl,
+        history_retention_days: original.historyRetentionDays,
+        tokens: original.tokens.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
+      };
       var input = document.getElementById('settingsApiBaseUrl');
       if (input) input.value = current.apiBaseUrl;
       var retentionInput = document.getElementById('settingsRetentionDays');
       if (retentionInput) retentionInput.value = String(current.historyRetentionDays);
       renderTokens();
       updateSaveButton();
+      // 静默 reload 也走这里(原表单 dirty 状态保留给 hideStaleBar)
       fetchRecordCount();
     }
   }
@@ -311,9 +341,54 @@
     });
   }
 
+  /* ---------- config-stale bar + WXEvents 订阅 ---------- */
+
+  function hideStaleBar(slot) {
+    var el = slot.querySelector('[data-role="config-stale"]');
+    if (el) el.hidden = true;
+  }
+
+  function reloadFromServer(slot) {
+    loadConfig().then(function () { hideStaleBar(slot); });
+  }
+
+  function onConfigChanged(slot) {
+    // 自我推送免提示窗口(自身保存后 2s 内的广播)
+    if (Date.now() < state.ignoreConfigChangedUntil) return;
+    if (state.dirty) {
+      var el = slot.querySelector('[data-role="config-stale"]');
+      if (el) el.hidden = false;
+    } else {
+      reloadFromServer(slot);
+    }
+  }
+
+  function cleanup() {
+    state.unsubscribers.forEach(function (u) { try { u(); } catch (e) { /* ignore */ } });
+    state.unsubscribers = [];
+    state.config = null;
+    state.dirty = false;
+    state.ignoreConfigChangedUntil = 0;
+  }
+
+  function bindEvents(slot) {
+    if (!global.WXEvents) return;
+    state.unsubscribers.push(global.WXEvents.subscribe('config.changed', function () { onConfigChanged(slot); }));
+  }
+
   function render(slot) {
+    cleanup(); // router 重新进入时先清掉旧订阅 / 状态
     tokenRevealed = {};
     slot.innerHTML =
+      '<div class="card" data-role="config-stale" hidden>' +
+        '<div class="card__title">配置已被其他会话更新</div>' +
+        '<div class="form-helper">当前表单有未保存的修改,刷新将丢失这些修改。</div>' +
+        '<div style="margin-top:var(--s-3)">' +
+          '<button type="button" class="btn btn--primary" data-role="config-stale-reload">重新加载</button> ' +
+          '<button type="button" class="btn btn--secondary" data-role="config-stale-ignore">忽略</button>' +
+        '</div>' +
+      '</div>' +
+
       '<div class="card">' +
         '<div class="card__title">后端 API</div>' +
         '<div class="form-group">' +
@@ -361,7 +436,7 @@
       if (!btn) return;
       var idx = Number(btn.getAttribute('data-idx'));
       var action = btn.getAttribute('data-action');
-      if (action === 'remove') removeToken(idx);
+      if (action === 'remove') { removeToken(idx); state.dirty = true; }
       else if (action === 'copy') copyToken(idx);
       else if (action === 'toggle') {
         tokenRevealed[idx] = !tokenRevealed[idx];
@@ -369,8 +444,10 @@
       } else if (action === 'preset') {
         var days = Number(btn.getAttribute('data-days'));
         setExpiry(idx, presetDate(days));
+        state.dirty = true;
       } else if (action === 'preset-permanent') {
         setExpiry(idx, '');
+        state.dirty = true;
       }
     });
 
@@ -379,6 +456,7 @@
       if (!input) return;
       var idx = Number(input.getAttribute('data-idx'));
       setExpiry(idx, input.value);
+      state.dirty = true;
     });
 
     list.addEventListener('input', function (e) {
@@ -387,6 +465,7 @@
       var idx = Number(input.getAttribute('data-idx'));
       if (idx < 0 || idx >= current.tokens.length) return;
       current.tokens[idx].label = input.value;
+      state.dirty = true;
       updateSaveButton();
     });
 
@@ -402,20 +481,28 @@
     });
     document.getElementById('settingsApiBaseUrl').addEventListener('input', function (e) {
       current.apiBaseUrl = e.currentTarget.value.trim();
+      state.dirty = true;
       updateSaveButton();
     });
     var retentionInput = document.getElementById('settingsRetentionDays');
     if (retentionInput) {
       retentionInput.addEventListener('input', function (e) {
         current.historyRetentionDays = Number(e.currentTarget.value) || 0;
+        state.dirty = true;
         updateSaveButton();
       });
     }
     document.getElementById('settingsCancelBtn').addEventListener('click', cancel);
     document.getElementById('settingsSaveBtn').addEventListener('click', save);
 
+    var reloadBtn = slot.querySelector('[data-role="config-stale-reload"]');
+    if (reloadBtn) reloadBtn.addEventListener('click', function () { reloadFromServer(slot); });
+    var ignoreBtn = slot.querySelector('[data-role="config-stale-ignore"]');
+    if (ignoreBtn) ignoreBtn.addEventListener('click', function () { hideStaleBar(slot); });
+
     bindBeforeUnload();
-    load();
+    loadConfig();
+    bindEvents(slot);
   }
 
   global.WXPages = global.WXPages || {};
