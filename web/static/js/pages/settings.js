@@ -236,6 +236,8 @@
     var btn = document.getElementById('settingsSaveBtn');
     if (btn) { btn.disabled = true; btn.classList.add('is-loading'); btn.textContent = '保存中…'; }
 
+    state.ignoreConfigChangedUntil = Date.now() + 2000;
+
     try {
       var res = await global.WXApi.authJson('/api/config', {
         method: 'PUT',
@@ -258,7 +260,6 @@
           history_retention_days: current.historyRetentionDays,
           tokens: tokensToSend.map(function (t) { return { value: t.value, label: t.label, expires_at: t.expires_at }; })
         };
-        state.ignoreConfigChangedUntil = Date.now() + 2000;
         state.dirty = false;
         if (global.WXToast) global.WXToast('保存成功', 'success');
       } else {
@@ -349,7 +350,7 @@
   }
 
   function reloadFromServer(slot) {
-    loadConfig().then(function () { hideStaleBar(slot); });
+    loadConfig().then(function () { state.dirty = false; hideStaleBar(slot); });
   }
 
   function onConfigChanged(slot) {
