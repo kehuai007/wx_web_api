@@ -74,7 +74,7 @@ func main() {
     defer store.Close()
 
     h := handler.New(effectivePwd, store)
-    go handler.SystemHub.Start(context.Background(), store)
+    go handler.EventsHub.Start(context.Background(), store)
     settingsHandler := handler.NewSettingsHandler()
 
     gin.SetMode(gin.ReleaseMode)
@@ -125,7 +125,7 @@ func main() {
 
     // System info routes (session-authenticated)
     r.GET("/api/system", h.SessionAuth(), h.GetSystem)
-    r.GET("/ws/system", h.SessionAuth(), h.HandleSystemWS)
+    r.GET("/ws/events", h.SessionAuth(), h.HandleEventsWS)
 
     // History routes (session-authenticated)
     histGroup := r.Group("/api/history", h.SessionAuth())

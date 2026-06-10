@@ -40,7 +40,8 @@ type SystemSnapshot struct {
 	Stats         *ReqStats `json:"stats"`
 }
 
-// upgrader 复用既有 systemHub 的实现——CheckOrigin 全开,因为是管理工具 + 已有 SessionAuth。
+// upgrader 是 process 内共享的 gorilla websocket upgrader。
+// CheckOrigin 全开,因为是管理工具 + 已有 SessionAuth。
 var upgrader = websocket.Upgrader{ //nolint:gochecknoglobals
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -86,66 +87,6 @@ var EventsHub = &eventsHub{ //nolint:gochecknoglobals
 	logDelCh: make(chan []int64, 64),
 	configCh: make(chan struct{}, 16),
 }
-
-// 旧 systemHub 兼容层:system.go 中的 HandleSystemWS 在 Task 6 改写前需要 SystemHub
-// 符号继续可解析。这里保留旧 API(method 集合与签名与原 systemHub 完全一致),
-// 内部用独立 conn-keyed map 跟踪连接,不复用 eventsHub,以免影响新设计。
-// Task 6 改写 HandleSystemWS 后此块删除。
-type systemHub struct {
-	mu      sync.RWMutex
-	clients map[*websocket.Conn]time.Time
-}
-
-var SystemHub = &systemHub{clients: make(map[*websocket.Conn]time.Time)} //nolint:gochecknoglobals
-
-func (h *systemHub) register(c *websocket.Conn) {
-	h.mu.Lock()
-	h.clients[c] = time.Now()
-	h.mu.Unlock()
-}
-
-func (h *systemHub) unregister(c *websocket.Conn) {
-	h.mu.Lock()
-	if _, ok := h.clients[c]; ok {
-		delete(h.clients, c)
-		_ = c.Close()
-	}
-	h.mu.Unlock()
-}
-
-func (h *systemHub) collectSnapshot(s *storage.Storage) SystemSnapshot {
-	// 旧 systemHub 不读 storage 内的 stats;为了保持与 system.go 中
-	// "Type: snapshot" 的 wire shape 兼容,这里直接构造一个 snapshot,
-	// 不引入新 eventsHub 的 fields。
-	snap := SystemSnapshot{
-		Type:          "snapshot",
-		Ts:            time.Now().Unix(),
-		UptimeSeconds: int64(time.Since(processStart).Seconds()),
-		Goroutines:    runtime.NumGoroutine(),
-	}
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	snap.Mem = MemStats{
-		Alloc:   ms.Alloc,
-		HeapSys: ms.HeapSys,
-		Sys:     ms.Sys,
-	}
-	if s != nil {
-		total, _ := s.Count()
-		since, _ := s.CountSince(storage.StartOfTodayMs())
-		errs, _ := s.CountErrors()
-		snap.Stats = &ReqStats{Total: total, Today: since, Errors: errs}
-	}
-	return snap
-}
-
-// 旧 systemHub 兼容层结束(在 Task 6 改写 system.go 后删除)。
-
-// Start 兼容 main.go 中的 SystemHub.Start 调用。旧 systemHub 启动时
-// 会跑 snapshot ticker 和 retention loop;现在 retention 由 eventsHub 接管,
-// ticker 由 HandleSystemWS 升级后立即推一帧替代。Task 6 改写 main.go 后此
-// 方法消失。
-func (h *systemHub) Start(ctx context.Context, s *storage.Storage) {}
 
 // register 把 conn 加入 hub,启动其写协程,返回 *eventClient。
 // 调用方负责在 conn 关闭时调 unregister(通常用 defer)。
