@@ -30,6 +30,13 @@ func (s *Storage) Init(path string) error {
 	if _, err := db.Exec(createRequestLogTable); err != nil {
 		return fmt.Errorf("create table: %w", err)
 	}
+	// Migrate older DBs that predate client_ip. CREATE TABLE IF NOT EXISTS won't
+	// add the column to an existing table, so we probe via PRAGMA table_info and
+	// ALTER if absent. Safe to run repeatedly: the probe returns the column once
+	// migration has run.
+	if err := ensureClientIPColumn(db); err != nil {
+		return fmt.Errorf("migrate client_ip: %w", err)
+	}
 	if _, err := db.Exec(createIndexTs); err != nil {
 		return fmt.Errorf("create idx_ts: %w", err)
 	}
@@ -50,14 +57,48 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
+// ensureClientIPColumn adds the client_ip column to an existing request_log
+// table if it doesn't already exist. No-op on fresh databases (CREATE TABLE
+// already included it).
+func ensureClientIPColumn(db *sql.DB) error {
+	rows, err := db.Query("PRAGMA table_info(request_log)")
+	if err != nil {
+		return fmt.Errorf("pragma table_info: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctype   string
+			notnull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return fmt.Errorf("scan table_info: %w", err)
+		}
+		if name == "client_ip" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows table_info: %w", err)
+	}
+	if _, err := db.Exec(addColumnClientIP); err != nil {
+		return fmt.Errorf("alter add client_ip: %w", err)
+	}
+	return nil
+}
+
 func (s *Storage) LogRequest(r *RequestLog) error {
 	if r.Source == "" {
 		r.Source = "external"
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO request_log (ts, token_label, kind, source, request, status, latency_ms, msg, result_data)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.Ts, r.TokenLabel, r.Kind, r.Source, string(r.Request), r.Status, r.LatencyMs, r.Msg, nullableJSON(r.Result),
+		`INSERT INTO request_log (ts, token_label, kind, source, client_ip, request, status, latency_ms, msg, result_data)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.Ts, r.TokenLabel, r.Kind, r.Source, r.ClientIP, string(r.Request), r.Status, r.LatencyMs, r.Msg, nullableJSON(r.Result),
 	)
 	if err != nil {
 		return fmt.Errorf("log request: %w", err)
@@ -119,7 +160,7 @@ func (s *Storage) QueryHistory(q HistoryQuery) (*HistoryPage, error) {
 	}
 
 	// page
-	listSQL := "SELECT id, ts, token_label, kind, source, request, status, latency_ms, msg, result_data FROM request_log" +
+	listSQL := "SELECT id, ts, token_label, kind, source, client_ip, request, status, latency_ms, msg, result_data FROM request_log" +
 		where + " ORDER BY ts DESC LIMIT ? OFFSET ?"
 	listArgs := append(append([]any{}, args...), size, offset)
 	rows, err := s.db.Query(listSQL, listArgs...)
@@ -135,7 +176,7 @@ func (s *Storage) QueryHistory(q HistoryQuery) (*HistoryPage, error) {
 			reqStr    string
 			resultStr sql.NullString
 		)
-		if err := rows.Scan(&r.ID, &r.Ts, &r.TokenLabel, &r.Kind, &r.Source,
+		if err := rows.Scan(&r.ID, &r.Ts, &r.TokenLabel, &r.Kind, &r.Source, &r.ClientIP,
 			&reqStr, &r.Status, &r.LatencyMs, &r.Msg, &resultStr); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}

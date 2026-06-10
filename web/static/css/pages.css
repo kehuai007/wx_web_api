@@ -564,7 +564,7 @@
   border-top: 1px solid var(--border);
   padding: var(--s-3) var(--s-2);
   display: grid;
-  grid-template-columns: 28px 100px 80px 1fr 60px 80px 100px 1fr 32px;
+  grid-template-columns: 28px 100px 80px 1fr 60px 80px 100px 120px 1fr 32px;
   gap: var(--s-3);
   align-items: center;
   cursor: pointer;
@@ -578,6 +578,7 @@
 .history-row__cell--ts { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-muted); }
 .history-row__cell--kind { font-family: var(--font-mono); font-size: var(--t-xs); }
 .history-row__cell--token { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text); }
+.history-row__cell--ip { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--text-muted); }
 .history-row__cell--summary {
   font-family: var(--font-mono);
   font-size: var(--t-xs);
@@ -661,6 +662,7 @@
       "check ts latency menu"
       "check kind kind kind"
       "check token token token"
+      "check ip ip ip"
       "check summary summary summary"
       "check status status status";
     gap: var(--s-1) var(--s-3);
@@ -669,6 +671,7 @@
   .history-row__cell--latency { grid-area: latency; text-align: right; }
   .history-row__cell--kind { grid-area: kind; }
   .history-row__cell--token { grid-area: token; }
+  .history-row__cell--ip { grid-area: ip; white-space: normal; word-break: break-all; }
   .history-row__cell--summary { grid-area: summary; white-space: normal; }
   .history-row__cell--status { grid-area: status; }
   .history-row__cell--source { grid-area: status; justify-self: end; }

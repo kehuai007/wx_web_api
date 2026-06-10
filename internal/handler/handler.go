@@ -254,6 +254,9 @@ func (h *Handler) writeLog(c *gin.Context, t0 time.Time, tokenLabel, source, kin
 		return
 	}
 	t0Copy := t0
+	// Capture client IP synchronously — *gin.Context is not goroutine-safe and
+	// must not be touched after the request completes.
+	clientIP := c.ClientIP()
 	go func() {
 		var reqBytes, resBytes []byte
 		if request != nil {
@@ -267,6 +270,7 @@ func (h *Handler) writeLog(c *gin.Context, t0 time.Time, tokenLabel, source, kin
 			TokenLabel: tokenLabel,
 			Kind:       kind,
 			Source:     source,
+			ClientIP:   clientIP,
 			Request:    reqBytes,
 			Status:     status,
 			LatencyMs:  time.Since(t0Copy).Milliseconds(),

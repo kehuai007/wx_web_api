@@ -14,6 +14,7 @@ type RequestLog struct {
 	TokenLabel string          `json:"token_label"`
 	Kind       string          `json:"kind"`    // 'url' | 'finder' | 'auth'
 	Source     string          `json:"source"`  // 'external' | 'admin_test'
+	ClientIP   string          `json:"client_ip"`
 	Request    json.RawMessage `json:"request"`
 	Status     int             `json:"status"`  // 0 / 1 / 401
 	LatencyMs  int64           `json:"latency_ms"`

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS request_log (
   token_label   TEXT    NOT NULL,
   kind          TEXT    NOT NULL,
   source        TEXT    NOT NULL,
+  client_ip     TEXT    NOT NULL DEFAULT '',
   request       TEXT    NOT NULL,
   status        INTEGER NOT NULL,
   latency_ms    INTEGER NOT NULL,
@@ -14,6 +15,11 @@ CREATE TABLE IF NOT EXISTS request_log (
   result_data   TEXT
 );
 `
+
+// addColumnClientIP is issued for pre-existing databases that were created
+// before client_ip was part of the schema. ALTER TABLE ADD COLUMN with a
+// NOT NULL DEFAULT '' is safe in SQLite and backfills existing rows to ''.
+const addColumnClientIP = `ALTER TABLE request_log ADD COLUMN client_ip TEXT NOT NULL DEFAULT ''`
 
 const createIndexTs = `
 CREATE INDEX IF NOT EXISTS idx_request_log_ts

@@ -280,6 +280,7 @@
       '<div class="history-row__cell history-row__cell--status" title="' + escapeHtml(r.msg || '') + '">' + statusInner + '</div>' +
       '<div class="history-row__cell history-row__cell--latency">' + escapeHtml(String(r.latency_ms)) + 'ms</div>' +
       '<div class="history-row__cell history-row__cell--source">' + sourceBadge(r.source) + '</div>' +
+      '<div class="history-row__cell history-row__cell--ip" title="' + escapeHtml(r.client_ip || '') + '">' + escapeHtml(r.client_ip || '—') + '</div>' +
       '<div class="history-row__cell history-row__cell--summary" title="' + escapeHtml(JSON.stringify(r.request)) + '">' + escapeHtml(summary) + '</div>' +
       '<div class="history-row__cell history-row__cell--menu">' +
         '<button class="copy-btn history-row__menu" data-id="' + r.id + '" title="删除">⋯</button>' +
@@ -291,6 +292,10 @@
 
   function renderDetail(r) {
     var sections = [];
+    if (r.client_ip) {
+      sections.push('<div class="history-detail__section-title">来源 IP</div>');
+      sections.push('<div class="kv__sub" style="font-family:var(--font-mono)">' + escapeHtml(r.client_ip) + '</div>');
+    }
     sections.push('<div class="history-detail__section-title">入参</div>');
     sections.push('<pre>' + escapeHtml(JSON.stringify(r.request, null, 2)) + '</pre>');
     if (r.msg) {
