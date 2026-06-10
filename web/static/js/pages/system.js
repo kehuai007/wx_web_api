@@ -210,6 +210,7 @@
         healthRows.push(placeholderRow('今日调用', '—'));
         healthRows.push(placeholderRow('错误率', '—'));
       }
+      healthRows.push('<dt>—</dt><dd><span class="kv__sub">数据来源: /api/history 后台聚合 (request_log 表)</span></dd>');
       hk.innerHTML = healthRows.join('');
     }
   }
