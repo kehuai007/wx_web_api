@@ -170,7 +170,10 @@ go func(c *eventClient) {
 { "type": "log.new", "log": { /* 完整 storage.RequestLog,含 result */ } }
 
 // 服务端推,history 页消费
+//   - ids 为非空数组:前端从 state.data.items 删这些 id,total -= ids.length
+//   - ids 为 null / 空数组:前端清空 state.data.items 并 total=0(全清信号)
 { "type": "log.deleted", "ids": [12, 34, 56] }
+{ "type": "log.deleted", "ids": null }
 
 // 服务端推,settings 页 / dashboard 页 / history 页消费
 { "type": "config.changed", "ts": 1749576000 }
@@ -202,6 +205,7 @@ go func(c *eventClient) {
 - `subscribe(type, handler)`:返回 unsubscribe 句柄(也可存下来用 `unsubscribe`)。
 - `unsubscribe(type, handler)`。
 - `connectionStatus` getter:`'connecting' | 'ok' | 'err' | 'auth_err'`。
+- `onStatusChange(handler)`:订阅状态变化;返回 unsubscribe 句柄(供 system 页的连接徽章使用)。
 - 内部:每个 type 一个 `Set<handler>`,`onmessage` 解析后 fanout 给对应集合。
 
 **重连**:
@@ -241,11 +245,15 @@ go func(c *eventClient) {
 **`history.js` 智能插入规则**:
 
 ```
+state.unreadHintVisible = false  // 布尔,只控制提示显隐,非累加计数
+
 function applyLogNew(slot, log):
+    // 全清事件不是 log.new 的事,这里只处理单条新行
     if state.page > 1:
         // 不在第 1 页,只更新计数 + 提示
         state.data.total += 1
-        showUnreadHint(slot, delta=1)  // 不累加,避免推送风暴
+        state.unreadHintVisible = true
+        renderUnreadHint(slot, text='有 1 条新记录,点此查看第 1 页')
         return
     if logMatchesFilter(log, state.filter):
         state.data.items.unshift(log)
@@ -255,7 +263,22 @@ function applyLogNew(slot, log):
         renderList(slot)
     else:
         state.data.total += 1
-        showUnreadHint(slot, delta=1, text='有 1 条新记录不符合筛选,点此查看全部')
+        state.unreadHintVisible = true
+        renderUnreadHint(slot, text='有 1 条新记录不符合当前筛选,点此清空筛选查看')
+
+function applyLogDeleted(slot, ids):
+    if !ids || ids.length === 0:
+        // 全清信号
+        state.data.items = []
+        state.data.total = 0
+        state.unreadHintVisible = false
+        renderList(slot)
+        return
+    // 单删 / 批删
+    const set = new Set(ids)
+    state.data.items = state.data.items.filter(function(it){ return !set.has(it.id) })
+    state.data.total = Math.max(0, state.data.total - ids.length)
+    renderList(slot)
 ```
 
 `logMatchesFilter(log, filter)`:
@@ -282,7 +305,7 @@ function applyLogNew(slot, log):
 - `dirty` 判定:表单内任何 input/select 内容与上次拉取快照不一致(初始化时拉一次保存 baseline,input 事件标 dirty)。
 - "重新加载"→ `WXApi.authJson('/api/config')` → 用响应重置表单 + 重设 baseline + 隐藏条。
 - "忽略"→ 仅隐藏条;表单 dirty 状态保持。
-- 自身保存成功后:不弹条(自我推送虽会到达,但 `config.changed` 到来时自身已 reload,dirty=false,走静默路径)。为防止短暂的双重拉取,在保存成功后短暂(2s)忽略 `config.changed` 事件。
+- **自身保存后的免提示窗口**:`PUT /api/config` 收到 200 响应时,记 `selfSaveAt = Date.now()` 并设置 `ignoreConfigChangedUntil = selfSaveAt + 2000`。`config.changed` 事件回调先检查 `Date.now() < ignoreConfigChangedUntil`,若在窗口内则直接 return(不 reload、不弹条)。2s 窗口足以覆盖 publish → fanout → client receive 整条链路上所有本地时延。
 
 ### `system.js` 改动细节
 
