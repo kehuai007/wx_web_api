@@ -1,7 +1,7 @@
 # WebSocket 实时事件推送 设计稿
 
 **日期**: 2026-06-10
-**状态**: 待用户复核
+**状态**: 已实施(2026-06-10) / 已确认
 **范围**: 单个子项目——把现有的"页面必须手动刷新"改为后端主动推送(`log.new` / `log.deleted` / `config.changed` / `system.snapshot`)
 **前置依赖**: system 页 / history 页 / settings 页 均已存在并稳定
 
@@ -341,17 +341,17 @@ function applyLogDeleted(slot, ids):
 
 ### 前端手测 checklist
 
-- [ ] 登录后 dashboard "最近请求"在别人发请求后 1s 内顶部出现新行
-- [ ] 切到 history 页,新行按 filter 智能插入
-- [ ] history 第 3 页时来新行,顶部出现"有新 1 条"提示,total 增 1,本页不变化
-- [ ] history 全清后,`log.deleted` 触发列表清空,total 归 0
-- [ ] settings 脏表单时另一会话保存 → 弹条;点"重新加载"覆盖;点"忽略"仅关条
-- [ ] settings 干净表单时另一会话保存 → 静默重拉无提示
-- [ ] system 页数值、内存曲线、uptime 滚动与改造前一致
-- [ ] 服务端重启后,所有 WS 客户端 30s 内自动重连
-- [ ] 主动 close 服务端,客户端连接徽章变红,30s 后重连成功
-- [ ] token 过期刷新页面 → 401 跳登录,events.js 不在登录态下持续重连
-- [ ] settings 自身保存后 2s 内不弹自身推送导致的二次确认条
+- [x] 登录后 dashboard "最近请求"在别人发请求后 1s 内顶部出现新行
+- [x] 切到 history 页,新行按 filter 智能插入
+- [x] history 第 3 页时来新行,顶部出现"有新 1 条"提示,total 增 1,本页不变化
+- [x] history 全清后,`log.deleted` 触发列表清空,total 归 0
+- [x] settings 脏表单时另一会话保存 → 弹条;点"重新加载"覆盖;点"忽略"仅关条
+- [x] settings 干净表单时另一会话保存 → 静默重拉无提示
+- [x] system 页数值、内存曲线、uptime 滚动与改造前一致
+- [x] 服务端重启后,所有 WS 客户端 30s 内自动重连
+- [x] 主动 close 服务端,客户端连接徽章变红,30s 后重连成功
+- [x] token 过期刷新页面 → 401 跳登录,events.js 不在登录态下持续重连
+- [x] settings 自身保存后 2s 内不弹自身推送导致的二次确认条
 
 ### 风险与缓解
 
