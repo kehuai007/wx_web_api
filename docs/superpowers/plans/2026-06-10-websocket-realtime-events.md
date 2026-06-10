@@ -58,9 +58,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"wx_web_api/internal/storage"
 
 	"github.com/gorilla/websocket"
 )
@@ -167,10 +168,10 @@ import (
 	"log"
 	"net/http"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 
+	"wx_web_api/internal/config"
 	"wx_web_api/internal/storage"
 
 	"github.com/gorilla/websocket"
@@ -357,11 +358,11 @@ func (h *eventsHub) PublishLog(r storage.RequestLog) {
 }
 
 // PublishLogDeleted 在 DeleteHistory 成功后调用。
-// ids 为 nil 表示全清信号,前端收到后清空列表。
+// ids == nil  → 全清信号(JSON 编码为 null,前端据此清空列表)
+// ids == []int64{} → no-op(显式传空 slice 不发)
+// ids 非空     → 正常发送
 func (h *eventsHub) PublishLogDeleted(ids []int64) {
-	if len(ids) == 0 && ids == nil {
-		// 仅当真的是 nil(全清信号)才发;显式传空 slice 不发
-	} else if len(ids) == 0 {
+	if ids != nil && len(ids) == 0 {
 		return
 	}
 	select {
@@ -504,7 +505,7 @@ func (h *eventsHub) runRetentionOnce() {
 	if h.storage == nil {
 		return
 	}
-	cfg := getConfigSnapshot() // 见 Task 10
+	cfg := config.Get()
 	if cfg.HistoryRetentionDays <= 0 {
 		return
 	}
@@ -518,15 +519,9 @@ func (h *eventsHub) runRetentionOnce() {
 		log.Printf("[retention] purged %d records older than %d days", n, cfg.HistoryRetentionDays)
 	}
 }
-
-// avoid "import unused" for strconv in Task 1(若 configFanoutLoop 删了 strconv 引用)
-var _ = strconv.IntSize
-
-// sync 在 events_test.go 使用(避免 test 文件删 import 时的循环引用)
-var _ = sync.RWMutex{}
 ```
 
-> **注意**:上面 `getConfigSnapshot()` 是占位,Task 10 替换为 `config.Get()`。`strconv` 的 import 留到 Task 2 实际用时再去掉 `_ = strconv.IntSize` 这一行。
+> **注意**:`runRetentionOnce` 直接调 `config.Get()`,所以 `broadcaster.go` 需要 import `"wx_web_api/internal/config"`(已在 Step 3 顶部 import 块加入)。
 
 - [ ] **Step 4: 跑测试,确认 register/unregister 通过**
 
@@ -554,6 +549,11 @@ git commit -m "feat(events): add eventsHub struct with register/unregister and p
 ```go
 func TestEventsHub_PublishLog_BroadcastsToAllClients(t *testing.T) {
 	hub := newTestHub()
+	// 抑制 system.snapshot 干扰:把 ticker 调到 1h,本测试期间不会触发
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
 	ts := serveTestHub(hub)
 	defer ts.Close()
 
@@ -618,7 +618,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -660,6 +659,11 @@ git commit -m "test(events): verify PublishLog broadcasts and is non-blocking wh
 ```go
 func TestEventsHub_PublishLogDeleted_BroadcastsIDs(t *testing.T) {
 	hub := newTestHub()
+	// 抑制 system.snapshot 干扰
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
 	ts := serveTestHub(hub)
 	defer ts.Close()
 
@@ -691,6 +695,11 @@ func TestEventsHub_PublishLogDeleted_BroadcastsIDs(t *testing.T) {
 
 func TestEventsHub_PublishLogDeleted_NilIsClearAll(t *testing.T) {
 	hub := newTestHub()
+	// 抑制 system.snapshot 干扰
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
 	ts := serveTestHub(hub)
 	defer ts.Close()
 
@@ -758,6 +767,11 @@ git commit -m "test(events): verify PublishLogDeleted wire shape (ids, null, emp
 ```go
 func TestEventsHub_PublishConfigChanged_Broadcasts(t *testing.T) {
 	hub := newTestHub()
+	// 抑制 system.snapshot 干扰
+	old := systemTickerInterval
+	systemTickerInterval = time.Hour
+	defer func() { systemTickerInterval = old }()
+
 	ts := serveTestHub(hub)
 	defer ts.Close()
 
@@ -1018,10 +1032,7 @@ Expected: PASS(全部)
 ```go
 func TestHandleEventsWS_SendsSnapshotOnHello(t *testing.T) {
 	hub := newTestHub()
-	// 缩短 ticker 间隔避免测试与 ticker 干扰
-	old := systemTickerInterval
-	systemTickerInterval = 50 * time.Millisecond
-	defer func() { systemTickerInterval = old }()
+	// 本测试不调 hub.Start(只用 register + 直接读 hello),只验证 hello 触发首帧逻辑。
 
 	// 起一个直接用 HandleEventsWS 形态的 server(测试不依赖 gin,直接用 httptest)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1230,29 +1241,12 @@ git commit -m "feat(events): publish config.changed on UpdateConfig success"
 
 ---
 
-## Task 10: main.go 切换 SystemHub → EventsHub,清理占位
+## Task 10: main.go 切换 SystemHub → EventsHub,路径改名
 
 **Files:**
-- Modify: `internal/handler/broadcaster.go`(把 `getConfigSnapshot` 占位换成 `config.Get`)
-- Modify: `main.go`(路径 + 符号替换)
+- Modify: `main.go`(符号 + 路径替换)
 
-- [ ] **Step 1: 替换 `broadcaster.go` 中 `runRetentionOnce` 的 `getConfigSnapshot()` 占位**
-
-把:
-
-```go
-	cfg := getConfigSnapshot() // 见 Task 10
-```
-
-改为:
-
-```go
-	cfg := config.Get()
-```
-
-并在文件顶部 import 块加 `"wx_web_api/internal/config"`(确认未引入)。
-
-- [ ] **Step 2: main.go 中 `SystemHub` → `EventsHub`,`/ws/system` → `/ws/events`**
+- [ ] **Step 1: main.go 中 `SystemHub` → `EventsHub`,`/ws/system` → `/ws/events`**
 
 `main.go` 中两处修改:
 
@@ -1270,13 +1264,13 @@ git commit -m "feat(events): publish config.changed on UpdateConfig success"
 	r.GET("/ws/events", h.SessionAuth(), h.HandleEventsWS)
 ```
 
-- [ ] **Step 3: 编译 + 全量测试**
+- [ ] **Step 2: 编译 + 全量测试**
 
 Run: `go build ./...`
 Run: `go test ./...`
 Expected: both succeed
 
-- [ ] **Step 4: 启动二进制,smoke 测试**
+- [ ] **Step 3: 启动二进制,smoke 测试**
 
 Run: `go build -o /tmp/wx_web_api_test.exe . && /tmp/wx_web_api_test.exe -port 18080 -pwd test123`
 
@@ -1292,7 +1286,7 @@ curl -s "http://127.0.0.1:18080/api/login/challenge"
 > binary 启动时日志应出现 `wx_web_api starting on :18080 (build: ...)`,无 panic。
 > 关闭时 Ctrl-C。
 
-- [ ] **Step 5: commit**
+- [ ] **Step 4: commit**
 
 ```bash
 git add internal/handler/broadcaster.go main.go
