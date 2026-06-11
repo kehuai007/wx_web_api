@@ -77,13 +77,15 @@ func (h *SettingsHandler) UpdateConfig(c *gin.Context) {
 		cfg.Tokens = normalized
 	}
 
-	// Pointer distinguishes "absent" (don't touch) from "explicit zero" (set to 0=permanent).
+	// Pointer distinguishes "absent" (don't touch) from "explicit value".
+	// Valid range is 1..60 — the legacy "0 = permanent" option is gone.
 	if req.HistoryRetentionDays != nil {
-		if *req.HistoryRetentionDays < 0 {
-			c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "history_retention_days must be >= 0"})
+		v := *req.HistoryRetentionDays
+		if v < 1 || v > 60 {
+			c.JSON(http.StatusOK, model.SimpleResponse{Code: 1, Msg: "history_retention_days 必须在 1~60 之间"})
 			return
 		}
-		cfg.HistoryRetentionDays = *req.HistoryRetentionDays
+		cfg.HistoryRetentionDays = v
 	}
 
 	if err := config.Save(cfg); err != nil {
