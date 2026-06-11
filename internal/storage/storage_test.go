@@ -357,3 +357,107 @@ func TestCountSuccessByTokenSince_EmptyLabelsReturnsEmptyMap(t *testing.T) {
 		t.Fatalf("expected empty map for empty labels, got %v", got)
 	}
 }
+
+func TestAvgLatencyTodayMs_NoDataReturnsZero(t *testing.T) {
+	s := newTempStorage(t)
+	// No data at all → 0
+	got, err := s.AvgLatencyTodayMs()
+	if err != nil {
+		t.Fatalf("AvgLatencyTodayMs empty: %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("AvgLatencyTodayMs empty = %d, want 0", got)
+	}
+
+	// Insert one row from 2 hours ago (definitely "today" locally) with status=1
+	// → must NOT be counted.
+	now := time.Now().UnixMilli()
+	twoHoursAgo := now - 2*60*60*1000
+	if err := s.LogRequest(&RequestLog{
+		Ts: twoHoursAgo, TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "",
+		Request: json.RawMessage(`{}`), Status: 1, LatencyMs: 9999, Msg: "err",
+	}); err != nil {
+		t.Fatalf("LogRequest: %v", err)
+	}
+	got, err = s.AvgLatencyTodayMs()
+	if err != nil {
+		t.Fatalf("AvgLatencyTodayMs err-row only: %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("AvgLatencyTodayMs with only status=1 row = %d, want 0", got)
+	}
+
+	// Now add a status=0 row with latency 100ms.
+	if err := s.LogRequest(&RequestLog{
+		Ts: twoHoursAgo + 1000, TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "",
+		Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 100,
+	}); err != nil {
+		t.Fatalf("LogRequest: %v", err)
+	}
+	got, err = s.AvgLatencyTodayMs()
+	if err != nil {
+		t.Fatalf("AvgLatencyTodayMs mixed: %v", err)
+	}
+	if got != 100 {
+		t.Fatalf("AvgLatencyTodayMs = %d, want 100 (only the status=0 row counts)", got)
+	}
+}
+
+func TestDailySuccessCounts_GroupsByLocalDay(t *testing.T) {
+	s := newTempStorage(t)
+	// Pin "now" to a known instant in local time; pick a 3-day window:
+	// today, today-1, today-2 — all in local time, all status=0.
+	now := time.Now()
+	t0Ms := now.UnixMilli()
+	t1Ms := now.Add(-24 * time.Hour).UnixMilli()
+	t2Ms := now.Add(-48 * time.Hour).UnixMilli()
+	rows := []RequestLog{
+		{Ts: t0Ms,    TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1},
+		{Ts: t0Ms,    TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1}, // 2 today
+		{Ts: t1Ms,    TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1}, // 1 yesterday
+		{Ts: t2Ms,    TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 1, LatencyMs: 1, Msg: "err"}, // not counted
+		// A row outside the window (7 days ago) must not appear.
+		{Ts: now.Add(-7 * 24 * time.Hour).UnixMilli(), TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1},
+	}
+	for i := range rows {
+		if err := s.LogRequest(&rows[i]); err != nil {
+			t.Fatalf("LogRequest[%d]: %v", i, err)
+		}
+	}
+
+	// sinceMs = 3 days ago; we expect exactly 2 days (today + yesterday), 3 rows total.
+	sinceMs := now.Add(-3 * 24 * time.Hour).UnixMilli()
+	got, err := s.DailySuccessCounts(sinceMs, "")
+	if err != nil {
+		t.Fatalf("DailySuccessCounts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2 (zero-fill is caller's job, not storage's)", len(got))
+	}
+	// Order is by day ASC: yesterday first, then today.
+	wantFirst := time.UnixMilli(t1Ms).In(now.Location())
+	wantFirstDay := wantFirst.Format("2006-01-02")
+	if got[0].Date != wantFirstDay {
+		t.Fatalf("got[0].Date = %q, want %q", got[0].Date, wantFirstDay)
+	}
+	if got[0].Count != 1 {
+		t.Fatalf("got[0].Count = %d, want 1", got[0].Count)
+	}
+	wantSecond := time.UnixMilli(t0Ms).In(now.Location())
+	wantSecondDay := wantSecond.Format("2006-01-02")
+	if got[1].Date != wantSecondDay {
+		t.Fatalf("got[1].Date = %q, want %q", got[1].Date, wantSecondDay)
+	}
+	if got[1].Count != 2 {
+		t.Fatalf("got[1].Count = %d, want 2", got[1].Count)
+	}
+
+	// Token filter: same data, token "a" should return 2 days; empty filter "" should also.
+	gotFiltered, err := s.DailySuccessCounts(sinceMs, "a")
+	if err != nil {
+		t.Fatalf("DailySuccessCounts(token=a): %v", err)
+	}
+	if len(gotFiltered) != 2 || gotFiltered[0].Count != 1 || gotFiltered[1].Count != 2 {
+		t.Fatalf("token=a filter: got %+v, want [{date1,1},{date2,2}]", gotFiltered)
+	}
+}

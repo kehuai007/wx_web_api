@@ -351,3 +351,71 @@ func (s *Storage) CountSuccessByTokenBetween(startMs, endMs int64, labels []stri
 	}
 	return out, nil
 }
+
+// DailyCount is one day bucket returned by DailySuccessCounts. Date is
+// "yyyy-MM-dd" in the server's local time. Days with zero rows are NOT
+// included — the caller (handler) is responsible for zero-filling.
+type DailyCount struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// AvgLatencyTodayMs returns the average latency in milliseconds for request_log
+// rows with status=0 and ts >= today's local 00:00. Returns 0 when no rows match.
+func (s *Storage) AvgLatencyTodayMs() (int64, error) {
+	var avg sql.NullFloat64
+	err := s.db.QueryRow(
+		"SELECT AVG(latency_ms) FROM request_log WHERE status = 0 AND ts >= ?",
+		StartOfTodayMs(),
+	).Scan(&avg)
+	if err != nil {
+		return 0, fmt.Errorf("avg latency today: %w", err)
+	}
+	if !avg.Valid {
+		return 0, nil
+	}
+	return int64(avg.Float64), nil
+}
+
+// DailySuccessCounts groups status=0 rows by local calendar day. sinceMs is
+// the lower bound; tokenLabel, if non-empty, filters to that token. Result is
+// sorted by Date ascending. Days with zero rows are NOT included.
+func (s *Storage) DailySuccessCounts(sinceMs int64, tokenLabel string) ([]DailyCount, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if tokenLabel == "" {
+		rows, err = s.db.Query(
+			`SELECT strftime('%Y-%m-%d', ts/1000, 'unixepoch', 'localtime') AS day, COUNT(*)
+			 FROM request_log
+			 WHERE status = 0 AND ts >= ?
+			 GROUP BY day ORDER BY day`,
+			sinceMs,
+		)
+	} else {
+		rows, err = s.db.Query(
+			`SELECT strftime('%Y-%m-%d', ts/1000, 'unixepoch', 'localtime') AS day, COUNT(*)
+			 FROM request_log
+			 WHERE status = 0 AND ts >= ? AND token_label = ?
+			 GROUP BY day ORDER BY day`,
+			sinceMs, tokenLabel,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("daily success counts: %w", err)
+	}
+	defer rows.Close()
+	out := make([]DailyCount, 0, 16)
+	for rows.Next() {
+		var d DailyCount
+		if err := rows.Scan(&d.Date, &d.Count); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
