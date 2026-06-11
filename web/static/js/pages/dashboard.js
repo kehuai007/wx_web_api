@@ -509,10 +509,16 @@
     }));
   }
 
+  var dismissPopover = null;
+
   function cleanup() {
     state.unsubscribers.forEach(function (u) { try { u(); } catch (e) { /* ignore */ } });
     state.unsubscribers = [];
     if (state.chartDebounceTimer) { clearTimeout(state.chartDebounceTimer); state.chartDebounceTimer = null; }
+    if (dismissPopover) {
+      document.removeEventListener('click', dismissPopover);
+      dismissPopover = null;
+    }
   }
 
   /* ---------- boot ---------- */
@@ -603,13 +609,14 @@
     if (applyBtn) applyBtn.addEventListener('click', applyCustomRange);
     var clearBtn = slot.querySelector('[data-role="custom-clear"]');
     if (clearBtn) clearBtn.addEventListener('click', clearCustomRange);
-    document.addEventListener('click', function dismiss(e) {
+    dismissPopover = function (e) {
       var pop = slot.querySelector('[data-role="custom-range-popover"]');
       var wrap = slot.querySelector('[data-role="custom-range-wrap"]');
       if (!pop || pop.hidden) return;
       if (wrap && wrap.contains(e.target)) return;
       pop.hidden = true;
-    });
+    };
+    document.addEventListener('click', dismissPopover);
 
     // chart controls
     var chartSel = slot.querySelector('[data-role="chart-token"]');
