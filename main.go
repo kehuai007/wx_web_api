@@ -127,6 +127,13 @@ func main() {
     r.GET("/api/system", h.SessionAuth(), h.GetSystem)
     r.GET("/ws/events", h.SessionAuth(), h.HandleEventsWS)
 
+    // Stats routes (session-authenticated)
+    statsGroup := r.Group("/api/stats", h.SessionAuth())
+    {
+        statsGroup.GET("", h.GetStats)
+        statsGroup.GET("/daily", h.GetStatsDaily)
+    }
+
     // History routes (session-authenticated)
     histGroup := r.Group("/api/history", h.SessionAuth())
     {
