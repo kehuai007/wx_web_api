@@ -145,8 +145,11 @@
   font-variant-numeric: tabular-nums;
 }
 .stat__note { font-size: var(--t-xs); color: var(--text-faint); margin-top: var(--s-1); }
-.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s-4); }
-@media (max-width: 768px) { .stat-grid { grid-template-columns: 1fr; } }
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s-4);
+}
 
 /* Empty state */
 .empty {
