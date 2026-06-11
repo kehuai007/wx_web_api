@@ -416,8 +416,8 @@
         '<div class="card__title">数据保留</div>' +
         '<dl class="kv">' +
           '<dt>历史保留天数</dt><dd>' +
-            '<input type="number" class="input" id="settingsRetentionDays" min="0" max="365" step="1" value="0">' +
-            ' <span class="kv__sub">0 = 永久</span>' +
+            '<input type="number" class="input" id="settingsRetentionDays" min="1" max="60" step="1" value="30">' +
+            ' <span class="kv__sub">1~60 天</span>' +
           '</dd>' +
           '<dt>当前已记录</dt><dd>' +
             '<span id="settingsRecordCount">—</span> <span class="kv__sub">条</span>' +
