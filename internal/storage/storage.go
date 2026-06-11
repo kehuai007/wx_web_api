@@ -259,3 +259,25 @@ func (s *Storage) CountErrors() (int64, error) {
 	}
 	return n, nil
 }
+
+// CountSuccessSince returns the number of request_log rows with status=0
+// and ts >= sinceMs. sinceMs == 0 means "no lower bound".
+func (s *Storage) CountSuccessSince(sinceMs int64) (int64, error) {
+	var n int64
+	err := s.db.QueryRow("SELECT COUNT(*) FROM request_log WHERE status = 0 AND ts >= ?", sinceMs).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count success since: %w", err)
+	}
+	return n, nil
+}
+
+// CountSuccessBetween returns the number of request_log rows with status=0
+// and startMs <= ts < endMs (inclusive of start, exclusive of end).
+func (s *Storage) CountSuccessBetween(startMs, endMs int64) (int64, error) {
+	var n int64
+	err := s.db.QueryRow("SELECT COUNT(*) FROM request_log WHERE status = 0 AND ts >= ? AND ts < ?", startMs, endMs).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count success between: %w", err)
+	}
+	return n, nil
+}

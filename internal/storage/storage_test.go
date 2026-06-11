@@ -216,3 +216,66 @@ func TestClientIPMigration(t *testing.T) {
 		t.Fatalf("post-migration insert: total=%d, top.ClientIP=%q", page.Total, page.Items[0].ClientIP)
 	}
 }
+
+func TestCountSuccessSince_ExcludesNonZeroStatus(t *testing.T) {
+	s := newTempStorage(t)
+	now := time.Now().UnixMilli()
+
+	rows := []RequestLog{
+		{Ts: now - 3000, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "1.1.1.1",
+			Request: json.RawMessage(`{"url":"https://a"}`), Status: 0, LatencyMs: 10},
+		{Ts: now - 2000, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "1.1.1.1",
+			Request: json.RawMessage(`{"url":"https://b"}`), Status: 1, LatencyMs: 20, Msg: "err"},
+		{Ts: now - 1000, TokenLabel: "beta", Kind: "auth", Source: "external", ClientIP: "1.1.1.1",
+			Request: json.RawMessage(`{"path":"x"}`), Status: 401, LatencyMs: 5, Msg: "expired"},
+	}
+	for i := range rows {
+		if err := s.LogRequest(&rows[i]); err != nil {
+			t.Fatalf("LogRequest[%d]: %v", i, err)
+		}
+	}
+
+	// since = now - 1500 ms → only the 401 row qualifies, but we want status=0
+	// so the result should be 0.
+	n, err := s.CountSuccessSince(now - 1500)
+	if err != nil {
+		t.Fatalf("CountSuccessSince: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("CountSuccessSince(now-1500) = %d, want 0 (no status=0 rows in range)", n)
+	}
+
+	// since = 0 → all rows qualify, only 1 has status=0
+	n, err = s.CountSuccessSince(0)
+	if err != nil {
+		t.Fatalf("CountSuccessSince(0): %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("CountSuccessSince(0) = %d, want 1", n)
+	}
+}
+
+func TestCountSuccessBetween_InclusiveStart_ExclusiveEnd(t *testing.T) {
+	s := newTempStorage(t)
+	ts := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC).UnixMilli()
+	// 3 rows: at start, between, at end
+	rows := []RequestLog{
+		{Ts: ts, TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1},
+		{Ts: ts + 1000, TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1},
+		{Ts: ts + 2000, TokenLabel: "a", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1},
+	}
+	for i := range rows {
+		if err := s.LogRequest(&rows[i]); err != nil {
+			t.Fatalf("LogRequest[%d]: %v", i, err)
+		}
+	}
+
+	// [ts, ts+2000) → inclusive of start, exclusive of end → 2 rows
+	n, err := s.CountSuccessBetween(ts, ts+2000)
+	if err != nil {
+		t.Fatalf("CountSuccessBetween: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("CountSuccessBetween(ts, ts+2000) = %d, want 2 (inclusive start, exclusive end)", n)
+	}
+}
