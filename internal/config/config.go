@@ -60,7 +60,7 @@ func Init(exePath string, binName string) error {
 	}
 
 	// Backfill: empty token label → value's first 8 chars + "..."
-	raw, rerr := m.loadRawJson()
+	_, _ = m.loadRawJson() // probed for its side-effect; result no longer needed
 	labelChanged := false
 	for i := range m.config.Tokens {
 		if m.config.Tokens[i].Label == "" {
@@ -73,25 +73,19 @@ func Init(exePath string, binName string) error {
 		}
 	}
 
-	// Inject default for HistoryRetentionDays only if the raw file lacks the key
-	// (or the file doesn't exist at all — fresh install). An admin's explicit 0
-	// (meaning "permanent") is preserved because we only inject when the key is
-	// absent.
+	// Clamp HistoryRetentionDays into the valid [1, 60] range. The legacy
+	// "0 = permanent" semantics and any value > 60 are replaced with 60.
+	// The "key absent" path still injects 60 as the default for fresh installs.
 	retentionChanged := false
-	switch {
-	case fileExisted && rerr == nil:
-		if _, ok := raw["history_retention_days"]; !ok {
-			if m.config.HistoryRetentionDays == 0 {
-				m.config.HistoryRetentionDays = 30
-				retentionChanged = true
-			}
-		}
-	case !fileExisted:
-		// Fresh install (no file at all): inject the 30-day default.
-		if m.config.HistoryRetentionDays == 0 {
-			m.config.HistoryRetentionDays = 30
-			retentionChanged = true
-		}
+	if m.config.HistoryRetentionDays < 1 || m.config.HistoryRetentionDays > 60 {
+		m.config.HistoryRetentionDays = 60
+		retentionChanged = true
+	}
+	// For fresh installs (no file at all), if the default injection above didn't
+	// already move us off 0, force 60.
+	if !fileExisted && m.config.HistoryRetentionDays == 0 {
+		m.config.HistoryRetentionDays = 60
+		retentionChanged = true
 	}
 
 	if labelChanged || retentionChanged {
