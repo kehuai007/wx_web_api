@@ -51,6 +51,29 @@ func StartOfTodayMs() int64 {
 	return start.UnixMilli()
 }
 
+// StartOfWeekMs returns the unix-millisecond timestamp of the start of the
+// current local week (Monday 00:00 local). On Sunday, returns the Monday of
+// the same week (i.e. 6 days ago), not the next Monday.
+func StartOfWeekMs() int64 {
+	now := time.Now()
+	// time.Weekday() returns Sunday=0, Monday=1, ... Saturday=6.
+	// Days to subtract to reach this week's Monday:
+	offset := int(now.Weekday()) - 1
+	if offset < 0 {
+		offset = 6 // Sunday → 6 days back to Monday
+	}
+	monday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).
+		AddDate(0, 0, -offset)
+	return monday.UnixMilli()
+}
+
+// StartOfMonthMs returns the unix-millisecond timestamp of the start of the
+// current local month (day 1, 00:00 local).
+func StartOfMonthMs() int64 {
+	now := time.Now()
+	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).UnixMilli()
+}
+
 // startOfTodayMsPtr returns a pointer to the value (nil = no lower bound on ts).
 func (q HistoryQuery) tsLowerBoundPtr() *int64 {
 	switch q.Range {
