@@ -819,7 +819,9 @@
 .trend-chart__axis { stroke: var(--border); stroke-width: 1; }
 .trend-chart__label { fill: var(--text-faint); font-size: 10px; }
 .trend-chart__dot { fill: var(--primary); opacity: 0; transition: opacity 0.15s; }
+.trend-chart__dot.has-data { opacity: 0.55; }
 .trend-chart__dot.is-active { opacity: 1; }
+.trend-chart__hit { cursor: help; }
 
 .heatmap {
   display: grid;
@@ -834,7 +836,7 @@
   height: 14px;
   border-radius: 2px;
   background: var(--surface-2);
-  cursor: default;
+  cursor: help;
 }
 .heatmap__cell[data-level="1"] { background: color-mix(in srgb, var(--primary) 25%, var(--surface-2)); }
 .heatmap__cell[data-level="2"] { background: color-mix(in srgb, var(--primary) 50%, var(--surface-2)); }

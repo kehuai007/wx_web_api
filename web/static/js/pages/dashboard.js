@@ -359,15 +359,25 @@
       return '<text x="' + (padL - 4) + '" y="' + (yl.y + 3) + '" text-anchor="end" class="trend-chart__label">' + yl.v + '</text>';
     }).join('');
 
-    var dots = pts.map(function (p, i) {
-      return '<circle class="trend-chart__dot" data-idx="' + i + '" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3"></circle>';
+    var halfW = (xStep > 0 ? xStep / 2 : 8);
+    var hitsAndDots = pts.map(function (p, i) {
+      var d = p.d;
+      // 命中区:整段图表高度的垂直带,鼠标在数据点附近任意位置都能触发
+      var hit = '<rect class="trend-chart__hit" data-idx="' + i + '" ' +
+                'x="' + (p.x - halfW).toFixed(1) + '" y="' + padT + '" ' +
+                'width="' + (halfW * 2).toFixed(1) + '" height="' + innerH + '" fill="transparent"></rect>';
+      // 数据点:非零时挂 has-data,使其常显半透明
+      var dotCls = 'trend-chart__dot' + (d.count > 0 ? ' has-data' : '');
+      var dot = '<circle class="' + dotCls + '" data-idx="' + i + '" ' +
+                'cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3"></circle>';
+      return hit + dot;
     }).join('');
 
     return '<svg class="trend-chart" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
       '<line class="trend-chart__axis" x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (w - padR) + '" y2="' + (padT + innerH) + '"></line>' +
       '<path class="trend-chart__area" d="' + areaD + '"></path>' +
       '<polyline class="trend-chart__line" points="' + linePts + '"></polyline>' +
-      yLabels + xLabels + dots +
+      yLabels + xLabels + hitsAndDots +
     '</svg>';
   }
 
@@ -416,23 +426,26 @@
       tooltip.style.top = ny + 'px';
     }
     function hide() { tooltip.hidden = true; }
-    document.querySelectorAll('.trend-chart__dot').forEach(function (dot) {
-      dot.addEventListener('mouseenter', function (e) {
-        var idx = Number(dot.getAttribute('data-idx'));
+    document.querySelectorAll('.trend-chart__hit').forEach(function (hit) {
+      hit.addEventListener('mouseenter', function (e) {
+        var idx = Number(hit.getAttribute('data-idx'));
         if (!state.daily || !state.daily.series[idx]) return;
         var d = state.daily.series[idx];
         show(escapeHtml(d.date) + ' · ' + d.count + ' 次', e.clientX, e.clientY);
-        dot.classList.add('is-active');
+        var dot = document.querySelector('.trend-chart__dot[data-idx="' + idx + '"]');
+        if (dot) dot.classList.add('is-active');
       });
-      dot.addEventListener('mousemove', function (e) {
-        var idx = Number(dot.getAttribute('data-idx'));
+      hit.addEventListener('mousemove', function (e) {
+        var idx = Number(hit.getAttribute('data-idx'));
         if (!state.daily || !state.daily.series[idx]) return;
         var d = state.daily.series[idx];
         show(escapeHtml(d.date) + ' · ' + d.count + ' 次', e.clientX, e.clientY);
       });
-      dot.addEventListener('mouseleave', function () {
+      hit.addEventListener('mouseleave', function () {
         hide();
-        dot.classList.remove('is-active');
+        var idx = Number(hit.getAttribute('data-idx'));
+        var dot = document.querySelector('.trend-chart__dot[data-idx="' + idx + '"]');
+        if (dot) dot.classList.remove('is-active');
       });
     });
     document.querySelectorAll('.heatmap__cell').forEach(function (cell) {
