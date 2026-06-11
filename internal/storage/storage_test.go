@@ -279,3 +279,81 @@ func TestCountSuccessBetween_InclusiveStart_ExclusiveEnd(t *testing.T) {
 		t.Fatalf("CountSuccessBetween(ts, ts+2000) = %d, want 2 (inclusive start, exclusive end)", n)
 	}
 }
+
+func TestCountSuccessByTokenSince_GroupsCorrectly(t *testing.T) {
+	s := newTempStorage(t)
+	now := time.Now().UnixMilli()
+
+	rows := []RequestLog{
+		{Ts: now - 3000, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0,  LatencyMs: 1},
+		{Ts: now - 2000, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0,  LatencyMs: 1},
+		{Ts: now - 1500, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 1,  LatencyMs: 1, Msg: "err"},
+		{Ts: now - 1000, TokenLabel: "beta",  Kind: "url", Source: "external", ClientIP: "", Request: json.RawMessage(`{}`), Status: 0,  LatencyMs: 1},
+	}
+	for i := range rows {
+		if err := s.LogRequest(&rows[i]); err != nil {
+			t.Fatalf("LogRequest[%d]: %v", i, err)
+		}
+	}
+
+	got, err := s.CountSuccessByTokenSince(0, []string{"alpha", "beta"})
+	if err != nil {
+		t.Fatalf("CountSuccessByTokenSince: %v", err)
+	}
+	if got["alpha"] != 2 {
+		t.Fatalf("alpha = %d, want 2 (status=0 only)", got["alpha"])
+	}
+	if got["beta"] != 1 {
+		t.Fatalf("beta = %d, want 1", got["beta"])
+	}
+}
+
+func TestCountSuccessByTokenSince_FiltersToLabels(t *testing.T) {
+	s := newTempStorage(t)
+	now := time.Now().UnixMilli()
+	if err := s.LogRequest(&RequestLog{
+		Ts: now, TokenLabel: "in_db", Kind: "url", Source: "external", ClientIP: "",
+		Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1,
+	}); err != nil {
+		t.Fatalf("LogRequest: %v", err)
+	}
+
+	// Pass a label list that does NOT include "in_db"
+	got, err := s.CountSuccessByTokenSince(0, []string{"other"})
+	if err != nil {
+		t.Fatalf("CountSuccessByTokenSince: %v", err)
+	}
+	if _, ok := got["in_db"]; ok {
+		t.Fatalf("got should not include label 'in_db' (not in requested list): %v", got)
+	}
+	if _, ok := got["other"]; ok {
+		t.Fatalf("got should not include label 'other' (no matching rows): %v", got)
+	}
+}
+
+func TestCountSuccessByTokenSince_EmptyLabelsReturnsEmptyMap(t *testing.T) {
+	s := newTempStorage(t)
+	now := time.Now().UnixMilli()
+	if err := s.LogRequest(&RequestLog{
+		Ts: now, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "",
+		Request: json.RawMessage(`{}`), Status: 0, LatencyMs: 1,
+	}); err != nil {
+		t.Fatalf("LogRequest: %v", err)
+	}
+
+	got, err := s.CountSuccessByTokenSince(0, nil)
+	if err != nil {
+		t.Fatalf("CountSuccessByTokenSince(nil labels): %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty map for nil labels, got %v", got)
+	}
+
+	got, err = s.CountSuccessByTokenSince(0, []string{})
+	if err != nil {
+		t.Fatalf("CountSuccessByTokenSince(empty labels): %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty map for empty labels, got %v", got)
+	}
+}

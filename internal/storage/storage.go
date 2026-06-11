@@ -281,3 +281,73 @@ func (s *Storage) CountSuccessBetween(startMs, endMs int64) (int64, error) {
 	}
 	return n, nil
 }
+
+// CountSuccessByTokenSince returns counts grouped by token_label for rows
+// with status=0 and ts >= sinceMs. Only labels in the provided list are
+// returned; an empty/nil labels list short-circuits to an empty map (no SQL).
+// Labels without matching rows are not present in the result map.
+func (s *Storage) CountSuccessByTokenSince(sinceMs int64, labels []string) (map[string]int64, error) {
+	if len(labels) == 0 {
+		return map[string]int64{}, nil
+	}
+	placeholders := strings.Repeat("?,", len(labels))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(labels)+1)
+	args = append(args, sinceMs)
+	for _, l := range labels {
+		args = append(args, l)
+	}
+	q := "SELECT token_label, COUNT(*) FROM request_log WHERE status = 0 AND ts >= ? AND token_label IN (" + placeholders + ") GROUP BY token_label"
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("count success by token: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]int64, len(labels))
+	for rows.Next() {
+		var label string
+		var n int64
+		if err := rows.Scan(&label, &n); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out[label] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
+
+// CountSuccessByTokenBetween is the [start, end) inclusive-start variant of
+// CountSuccessByTokenSince.
+func (s *Storage) CountSuccessByTokenBetween(startMs, endMs int64, labels []string) (map[string]int64, error) {
+	if len(labels) == 0 {
+		return map[string]int64{}, nil
+	}
+	placeholders := strings.Repeat("?,", len(labels))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, 0, len(labels)+2)
+	args = append(args, startMs, endMs)
+	for _, l := range labels {
+		args = append(args, l)
+	}
+	q := "SELECT token_label, COUNT(*) FROM request_log WHERE status = 0 AND ts >= ? AND ts < ? AND token_label IN (" + placeholders + ") GROUP BY token_label"
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("count success by token between: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]int64, len(labels))
+	for rows.Next() {
+		var label string
+		var n int64
+		if err := rows.Scan(&label, &n); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out[label] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows: %w", err)
+	}
+	return out, nil
+}
