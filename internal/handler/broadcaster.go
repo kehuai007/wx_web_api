@@ -22,12 +22,39 @@ type MemStats struct {
 	Sys     uint64 `json:"sys"`
 }
 
+// TokenStat 是单 token 的多区间成功调用计数,出现在 system.snapshot.stats.by_token 中。
+// Today/Week/Month/Total 都限定 status=0;Total 的实际覆盖范围 = 近 retention 天。
+type TokenStat struct {
+	Label string `json:"label"`
+	Today int64  `json:"today"`
+	Week  int64  `json:"week"`
+	Month int64  `json:"month"`
+	Total int64  `json:"total"`
+}
+
 // ReqStats 是 system.snapshot 中 stats 字段的 JSON 形态。
+// 既有 Total/Today/Errors 保持不变(老前端可继续用),新增字段全部限定 status=0。
 // Stats 为 nil 时表示 request_log 尚未就绪(前端应显示 "—")。
 type ReqStats struct {
+	// 既有字段
 	Total  int64 `json:"total"`
 	Today  int64 `json:"today"`
 	Errors int64 `json:"errors"`
+
+	// 新增:成功调用计数
+	SuccessToday int64 `json:"success_today"`
+	SuccessWeek  int64 `json:"success_week"`
+	SuccessMonth int64 `json:"success_month"`
+	SuccessTotal int64 `json:"success_total"`
+
+	// 新增:今日成功平均耗时(int ms,无数据时 0)
+	AvgLatencyToday int64 `json:"avg_latency_today_ms"`
+
+	// 新增:当前 retention 配置(用于"总计(近 N 天)"卡的副文案)
+	RetentionDays int `json:"retention_days"`
+
+	// 新增:按当前 cfg.Tokens 顺序排列的成功调用计数
+	ByToken []TokenStat `json:"by_token"`
 }
 
 // SystemSnapshot 是 system.snapshot 帧的 wire shape。
@@ -171,11 +198,63 @@ func (h *eventsHub) collectSnapshot() SystemSnapshot {
 		HeapSys: ms.HeapSys,
 		Sys:     ms.Sys,
 	}
-	if h.storage != nil {
-		total, _ := h.storage.Count()
-		since, _ := h.storage.CountSince(storage.StartOfTodayMs())
-		errs, _ := h.storage.CountErrors()
-		snap.Stats = &ReqStats{Total: total, Today: since, Errors: errs}
+	if h.storage == nil {
+		return snap
+	}
+
+	// 既有三连(全部行,不限 status)
+	total, _ := h.storage.Count()
+	since, _ := h.storage.CountSince(storage.StartOfTodayMs())
+	errs, _ := h.storage.CountErrors()
+
+	// 拉当前 token 列表(取 Label,空/未初始化时为空)
+	cfg := config.Get()
+	tokenLabels := make([]string, 0, len(cfg.Tokens))
+	for _, t := range cfg.Tokens {
+		tokenLabels = append(tokenLabels, t.Label)
+	}
+
+	// 4 个区间(now,week,month,all)的全局成功计数
+	now := storage.StartOfTodayMs()
+	week := storage.StartOfWeekMs()
+	month := storage.StartOfMonthMs()
+	successToday, _ := h.storage.CountSuccessSince(now)
+	successWeek, _ := h.storage.CountSuccessSince(week)
+	successMonth, _ := h.storage.CountSuccessSince(month)
+	successTotal, _ := h.storage.CountSuccessSince(0)
+
+	// 按 token 分组的 4 个区间
+	byNow, _ := h.storage.CountSuccessByTokenSince(now, tokenLabels)
+	byWeek, _ := h.storage.CountSuccessByTokenSince(week, tokenLabels)
+	byMonth, _ := h.storage.CountSuccessByTokenSince(month, tokenLabels)
+	byAll, _ := h.storage.CountSuccessByTokenSince(0, tokenLabels)
+
+	// 平均耗时
+	avgLat, _ := h.storage.AvgLatencyTodayMs()
+
+	// 合并 by_token:按 cfg.Tokens 顺序,缺的补 0
+	byToken := make([]TokenStat, 0, len(tokenLabels))
+	for _, label := range tokenLabels {
+		byToken = append(byToken, TokenStat{
+			Label: label,
+			Today: byNow[label],
+			Week:  byWeek[label],
+			Month: byMonth[label],
+			Total: byAll[label],
+		})
+	}
+
+	snap.Stats = &ReqStats{
+		Total:           total,
+		Today:           since,
+		Errors:          errs,
+		SuccessToday:    successToday,
+		SuccessWeek:     successWeek,
+		SuccessMonth:    successMonth,
+		SuccessTotal:    successTotal,
+		AvgLatencyToday: avgLat,
+		RetentionDays:   cfg.HistoryRetentionDays,
+		ByToken:         byToken,
 	}
 	return snap
 }
