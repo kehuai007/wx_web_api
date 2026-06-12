@@ -1,4 +1,8 @@
 wx_web_api.exe
+dist/wx_web_api
+wx_web_api.json
 *.db
+*.db-shm
+*.db-wal
 *.log
 .env

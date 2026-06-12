@@ -1,7 +1,0 @@
-{
-  "api_base_url": "http://127.0.0.1:2022",
-  "tokens": [
-    "wx-web-api-secret-token-2025"
-  ],
-  "port": 13335
-}
