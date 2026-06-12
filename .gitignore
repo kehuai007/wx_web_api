@@ -6,3 +6,6 @@ wx_web_api.json
 *.db-wal
 *.log
 .env
+.superpowers/
+tmp_*.png
+docs/superpowers/plans/2026-06-09-parse-test-page.md
