@@ -119,9 +119,16 @@ func TestParse_ParseSph_Success(t *testing.T) {
 func TestParse_BothEndpointsFail(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
-		// Both endpoints return errCode != 0
-		fmt.Fprintf(w, `{"code":0,"msg":"","data":{"errCode":99,"errMsg":"%s failed"}}`, r.URL.Path)
+		switch r.URL.Path {
+		case "/api/channels/feed/profile", "/api/channels/parse_sph":
+			w.WriteHeader(200)
+			// Both endpoints return errCode=99; errMsg embeds the path
+			// so the test can assert which endpoint's error propagated.
+			fmt.Fprintf(w, `{"code":0,"msg":"","data":{"errCode":99,"errMsg":"%s failed"}}`, r.URL.Path)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(404)
+		}
 	}))
 	defer srv.Close()
 
@@ -130,8 +137,17 @@ func TestParse_BothEndpointsFail(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	// The error message should mention the sph path (the last attempt)
-	if !strings.Contains(err.Error(), "sph") {
-		t.Errorf("expected error to mention 'sph' (last attempt), got: %v", err)
+	// The error must be the parse_sph semantic error (errCode=99 with the
+	// sph-path errMsg), not the feed error and not a transport error.
+	// Anchor on the path-specific string the mock injects via fmt.Fprintf.
+	const wantErrMsg = "/api/channels/parse_sph failed"
+	if !strings.Contains(err.Error(), wantErrMsg) {
+		t.Errorf("expected error to embed parse_sph path errMsg %q (last-attempt), got: %v", wantErrMsg, err)
+	}
+	if !strings.Contains(err.Error(), "errCode=99") {
+		t.Errorf("expected error to carry errCode=99 (semantic error propagated), got: %v", err)
+	}
+	if strings.Contains(err.Error(), "feed ") {
+		t.Errorf("got feed-side error, want parse_sph error: %v", err)
 	}
 }
