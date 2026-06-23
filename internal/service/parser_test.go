@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -281,5 +282,44 @@ func TestParse_FeedNon200_FallsBackToSph(t *testing.T) {
 	}
 	if got.Author != "recovered" {
 		t.Errorf("expected fallback result, got %+v", got)
+	}
+}
+
+// TestParseFinderFeedByObjectID_Unchanged is a regression test: the
+// finder path must still call feed/profile with oid/nid query params
+// and parse the object shape. We do not change this method's behavior.
+func TestParseFinderFeedByObjectID_Unchanged(t *testing.T) {
+	var gotQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/channels/feed/profile" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		gotQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		w.Write([]byte(`{
+			"code": 0, "msg": "",
+			"data": {"errCode": 0, "errMsg": "",
+				"data": {"object": {"objectDesc": {"description": "finder title", "media": [
+					{"url": "https://v/", "mediaType": 4, "decodeKey": "k", "urlToken": "?t=1", "coverUrl": "https://c/"}
+				]}, "contact": {"nickname": "finder author"}}}
+			}
+		}`))
+	}))
+	defer srv.Close()
+
+	p := NewParserServiceWithBaseURL(srv.URL)
+	got, err := p.ParseFinderFeedByObjectID("oid-abc", "nid-xyz")
+	if err != nil {
+		t.Fatalf("ParseFinderFeedByObjectID failed: %v", err)
+	}
+	if gotQuery.Get("oid") != "oid-abc" {
+		t.Errorf("oid = %q, want oid-abc", gotQuery.Get("oid"))
+	}
+	if gotQuery.Get("nid") != "nid-xyz" {
+		t.Errorf("nid = %q, want nid-xyz", gotQuery.Get("nid"))
+	}
+	if got.Author != "finder author" || got.Title != "finder title" {
+		t.Errorf("got %+v", got)
 	}
 }
