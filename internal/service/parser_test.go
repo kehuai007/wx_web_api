@@ -243,3 +243,43 @@ func TestParse_FeedMissingRequiredFields(t *testing.T) {
 		t.Errorf("expected fallback to parse_sph result, got %+v", got)
 	}
 }
+
+// TestParse_FeedNon200_FallsBackToSph verifies that any non-200
+// response from feed (including "endpoint not registered" or transient
+// upstream errors) triggers fallback to parse_sph. The httptest server
+// below is the same one used for both endpoints, so the feed path is
+// designed to 404.
+func TestParse_FeedNon200_FallsBackToSph(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/channels/feed/profile":
+			// Simulate "feed endpoint not available" with a 404
+			w.WriteHeader(404)
+			w.Write([]byte(`{"code": 1, "msg": "not found"}`))
+		case "/api/channels/parse_sph":
+			w.WriteHeader(200)
+			w.Write([]byte(`{
+				"code": 0, "msg": "ok",
+				"data": {"errCode": 0, "errMsg": "",
+					"data": {
+						"authorInfo": {"nickname": "recovered"},
+						"feedInfo": {"description": "ok", "mediaType": 4, "coverUrl": "https://c/", "originVideoUrl": "https://v/"}
+					}
+				}
+			}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewParserServiceWithBaseURL(srv.URL)
+	got, err := p.Parse("https://example.com/share")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if got.Author != "recovered" {
+		t.Errorf("expected fallback result, got %+v", got)
+	}
+}
