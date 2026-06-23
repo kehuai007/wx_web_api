@@ -151,3 +151,49 @@ func TestParse_BothEndpointsFail(t *testing.T) {
 		t.Errorf("got feed-side error, want parse_sph error: %v", err)
 	}
 }
+
+// TestParse_FeedReturnsEmptyData verifies that a feed response with
+// errCode=0 but no media triggers fallback to parse_sph.
+func TestParse_FeedReturnsEmptyData(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/channels/feed/profile":
+			w.WriteHeader(200)
+			// Valid envelope, but no media
+			w.Write([]byte(`{
+				"code": 0, "msg": "",
+				"data": {"errCode": 0, "errMsg": "",
+					"data": {"object": {"objectDesc": {"description": "t", "media": []}, "contact": {"nickname": "a"}}}
+				}
+			}`))
+		case "/api/channels/parse_sph":
+			w.WriteHeader(200)
+			w.Write([]byte(`{
+				"code": 0, "msg": "ok",
+				"data": {"errCode": 0, "errMsg": "",
+					"data": {
+						"authorInfo": {"nickname": "a"},
+						"feedInfo": {"description": "t", "mediaType": 4, "coverUrl": "https://c/", "originVideoUrl": "https://v/"}
+					}
+				}
+			}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewParserServiceWithBaseURL(srv.URL)
+	got, err := p.Parse("https://example.com/share")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	// Should have come from parse_sph (originVideoUrl, decode_key empty)
+	if got.VideoURL != "https://v/" {
+		t.Errorf("VideoURL = %q, expected fallback to parse_sph originVideoUrl", got.VideoURL)
+	}
+	if got.DecodeKey != "" {
+		t.Errorf("DecodeKey = %q, want \"\"", got.DecodeKey)
+	}
+}
