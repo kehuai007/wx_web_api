@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,5 +111,27 @@ func TestParse_ParseSph_Success(t *testing.T) {
 	}
 	if got.MediaType != 4 {
 		t.Errorf("MediaType = %d, want 4", got.MediaType)
+	}
+}
+
+// TestParse_BothEndpointsFail verifies the orchestrator returns the
+// parse_sph error (the last attempt) when both endpoints fail.
+func TestParse_BothEndpointsFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		// Both endpoints return errCode != 0
+		fmt.Fprintf(w, `{"code":0,"msg":"","data":{"errCode":99,"errMsg":"%s failed"}}`, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	p := NewParserServiceWithBaseURL(srv.URL)
+	_, err := p.Parse("https://example.com/share")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	// The error message should mention the sph path (the last attempt)
+	if !strings.Contains(err.Error(), "sph") {
+		t.Errorf("expected error to mention 'sph' (last attempt), got: %v", err)
 	}
 }
