@@ -197,3 +197,49 @@ func TestParse_FeedReturnsEmptyData(t *testing.T) {
 		t.Errorf("DecodeKey = %q, want \"\"", got.DecodeKey)
 	}
 }
+
+// TestParse_FeedMissingRequiredFields verifies that a feed response
+// with errCode=0 and a valid media item, but missing required text
+// fields (author / title / cover), is treated as failure → fallback.
+func TestParse_FeedMissingRequiredFields(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/channels/feed/profile":
+			w.WriteHeader(200)
+			// All required text fields empty
+			w.Write([]byte(`{
+				"code": 0, "msg": "",
+				"data": {"errCode": 0, "errMsg": "",
+					"data": {"object": {"objectDesc": {"description": "", "media": [
+						{"url": "https://v/", "mediaType": 4, "decodeKey": "k", "urlToken": "?t=1", "coverUrl": ""}
+					]}, "contact": {"nickname": ""}}}
+				}
+			}`))
+		case "/api/channels/parse_sph":
+			w.WriteHeader(200)
+			w.Write([]byte(`{
+				"code": 0, "msg": "ok",
+				"data": {"errCode": 0, "errMsg": "",
+					"data": {
+						"authorInfo": {"nickname": "ok"},
+						"feedInfo": {"description": "ok", "mediaType": 4, "coverUrl": "https://c/", "originVideoUrl": "https://v/"}
+					}
+				}
+			}`))
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewParserServiceWithBaseURL(srv.URL)
+	got, err := p.Parse("https://example.com/share")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	// Should fall back to parse_sph
+	if got.Author != "ok" || got.Title != "ok" {
+		t.Errorf("expected fallback to parse_sph result, got %+v", got)
+	}
+}
