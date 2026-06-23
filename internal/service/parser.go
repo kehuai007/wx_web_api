@@ -16,9 +16,17 @@ type ParserService struct {
 	client  *http.Client
 }
 
+// NewParserService returns a ParserService using the global config's API base URL.
+// Used by handlers in production.
 func NewParserService() *ParserService {
+	return NewParserServiceWithBaseURL(config.Get().ApiBaseUrl)
+}
+
+// NewParserServiceWithBaseURL returns a ParserService with a custom API base URL.
+// Used by tests; not exported as a setter to keep the field encapsulated.
+func NewParserServiceWithBaseURL(baseURL string) *ParserService {
 	return &ParserService{
-		baseURL: config.Get().ApiBaseUrl,
+		baseURL: baseURL,
 		client:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
