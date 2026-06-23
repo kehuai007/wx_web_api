@@ -52,6 +52,7 @@ GET {api_base_url}/api/channels/parse_sph?url=<shareURL>
 |---|---|
 | `internal/service/parser.go` | 重写：拆出 `fetchFeedProfile` / `fetchParseSph` 两个端点方法 + `convertObjectShape` / `convertFeedInfoShape` 两个转换函数 + `parseAndConvert` 共用编排。删除 `Parse` 中对 `shared_feed/profile` 的调用。`ParseFinderFeedByObjectID` 不变。 |
 | `internal/service/parser_test.go` | 新增：用 `httptest.Server` 模拟两个上游端点，覆盖三种情况（feed 成功 / feed 失败→sph 成功 / 都失败）+ 两种 shape 的字段映射 + 必填字段缺失判负。 |
+| `internal/service/parser_integration_test.go` | 新增：端到端集成测试，调真实上游 (`http://127.0.0.1:2022`)，用测试 URL `https://weixin.qq.com/sph/A48v1zOJKL` 走完整个解析流程，下载 MP4 存到 `t.TempDir()`，验证 Content-Type / Content-Length / MP4 ftyp magic / 文件大小 / 解析宽高。 |
 | `internal/handler/handler.go` | **不改**（`ParseWxURL` 入口不变，仍调用 `h.parser.Parse(req.URL)`） |
 | `internal/model/response.go` | **不改**（`WxParseData` JSON 字段不变） |
 | `main.go` / `config/*.go` | **不改** |
@@ -209,6 +210,44 @@ POST /wx { url: "https://weixin.qq.com/sph/A48v1zOJKL" }
 | `TestParseFinderFeedByObjectID_Unchanged` | 回归：原 `ParseFinderFeedByObjectID` 行为不变 |
 
 每个端点用 `httptest.NewServer` 起一个本地 HTTP server，`ParserService` 通过 `config.SetTestApiBaseURL(server.URL)` 之类的方式注入测试 URL（具体方式在实现 plan 里定）。
+
+#### 端到端集成测试
+
+`internal/service/parser_integration_test.go`（新增）—— **不**在 `go test ./...` 默认流程里跑，需要显式 opt-in：
+
+- 跳过条件：缺 `WX_PARSER_INTEGRATION=1` 环境变量 或 `go test -short`
+- 上游地址：通过 `WX_PARSER_API_BASE` 环境变量覆盖，默认 `http://127.0.0.1:2022`
+- 上游不可达 → `t.Skipf(...)` 而不是 fail
+
+**唯一用例**：`TestParseIntegration_DownloadMp4AndVerify`
+
+| 步骤 | 内容 |
+|---|---|
+| 1 | 测试 URL：`https://weixin.qq.com/sph/A48v1zOJKL`（用户提供） |
+| 2 | 调 `ParserService.Parse(testURL)`，断言无 err、`video_url` 非空 |
+| 3 | 用 `http.Head(video_url)` 拿 `Content-Type` 和 `Content-Length`；断言 `Content-Type` 含 `video/` 或 `octet-stream`；`Content-Length > 0` |
+| 4 | 用 `http.Get(video_url)` 下载 body，存到 `t.TempDir()/video.mp4` |
+| 5 | 对比：下载字节数 == `Content-Length`（如果上游报了 size） |
+| 6 | MP4 magic 检查：读文件前 12 字节，断言 `[4]byte{'ftyp'}` 在 offset 4 |
+| 7 | 文件大小合理性断言：> 100 KB（避免拿到的是缩略图/转码低清预览） |
+| 8 | 用最小化的 MP4 box parser 读 `moov/trak/tkhd` 拿视频宽高（如果 parser 失败就 warn，不 fail——box 结构可能因编码器不同） |
+| 9 | `t.Logf` 打印：保存路径、字节数、`Content-Type`、解析出的宽高——便于人工核对 |
+| 10 | 不在测试里 `os.Remove`——`t.TempDir()` 会在测试结束时自动清理；路径打印出来给用户做手动核对 |
+
+**断言优先级**（强 → 弱）：
+
+1. `video_url` 非空 ✓
+2. HEAD 返回 200，Content-Type/Length 正常 ✓
+3. 下载字节数 == Content-Length ✓
+4. 文件是合法 MP4（ftyp magic） ✓
+5. 文件大小 > 100 KB ✓
+6. 解析出 width/height（warn-only，不 fail）
+
+跑法（在仓库根目录）：
+
+```bash
+WX_PARSER_INTEGRATION=1 go test ./internal/service/ -run TestParseIntegration -v
+```
 
 ## 自审
 
