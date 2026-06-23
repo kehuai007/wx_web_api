@@ -118,7 +118,7 @@ GET {api_base_url}/api/channels/parse_sph?url=<shareURL>
   }
   ```
 
-  注：`originVideoUrl` 是 wx_channels_download 服务端用 `cleanVideoURL` 处理过的产物，只保留 `encfilekey` 和 `token` 两个 query 参数。本项目直接取这个值。
+  注：`originVideoUrl` 是 wx_channels_download 服务端用 `cleanVideoURL` 处理过的产物，只保留 `encfilekey` 和 `token` 两个 query 参数。本项目直接取这个值——**必须用 `originVideoUrl`，不要用 `videoUrl`**。`videoUrl` 是 yuanbao 上游返回的原始 URL，带一堆无关的 query 噪音（鉴权/统计/渲染参数等），不保证是原画直链；`originVideoUrl` 是清理后的原画质直链，下载时用它能直接拿到原始文件。
 
 ### 响应 → `WxParseData` 映射
 
@@ -128,7 +128,7 @@ GET {api_base_url}/api/channels/parse_sph?url=<shareURL>
 | `title` | `data.data.object.objectDesc.description` | `data.data.feedInfo.description` |
 | `cover_url` | `data.data.object.objectDesc.media[0].coverUrl` | `data.data.feedInfo.coverUrl` |
 | `video_url` | `media[0].url + media[0].urlToken` | `data.data.feedInfo.originVideoUrl` |
-| `decode_key` | `media[0].decodeKey` | `""` |
+| `decode_key` | `media[0].decodeKey` | `""`（parse_sph 不返回；空串 = 该视频无加密） |
 | `media_type` | `media[0].mediaType` | `data.data.feedInfo.mediaType` |
 
 ### 成功判定
@@ -200,7 +200,7 @@ POST /wx { url: "https://weixin.qq.com/sph/A48v1zOJKL" }
 | 用例 | 描述 |
 |---|---|
 | `TestParse_FeedProfile_Success` | feed 返回 object 形状，断言 6 个字段全部正确映射 |
-| `TestParse_ParseSph_Success` | sph 返回 feedInfo 形状，断言 `decode_key == ""`、`video_url` 取 `originVideoUrl` |
+| `TestParse_ParseSph_Success` | sph 返回 feedInfo 形状，断言 6 个字段全部正确映射；`decode_key == ""`；`video_url` 取 `originVideoUrl` 而**不是** `videoUrl`（原画直链约束） |
 | `TestParse_FeedFails_ParseSphSucceeds` | feed 返回 `errCode != 0`，sph 返回 200+0+0，最终取 sph 结果 |
 | `TestParse_FeedFails_ParseSphFails` | feed 500、sph 500，返回非 nil error |
 | `TestParse_FeedReturnsEmptyData` | feed 返回 `data.data.object.objectDesc.media` 为空 → 降级 |
