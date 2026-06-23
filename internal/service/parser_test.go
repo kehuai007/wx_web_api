@@ -3,7 +3,6 @@ package service
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -37,7 +36,7 @@ func TestParserService_WithCustomBaseURL(t *testing.T) {
 	if got.Title != "t" || got.Author != "a" {
 		t.Errorf("got %+v", got)
 	}
-	if !strings.HasSuffix(hitPath, "/api/channels/feed/profile") {
-		t.Errorf("expected feed/profile path, got %s", hitPath)
+	if hitPath != "/api/channels/feed/profile" {
+		t.Errorf("expected /api/channels/feed/profile, got %s", hitPath)
 	}
 }
