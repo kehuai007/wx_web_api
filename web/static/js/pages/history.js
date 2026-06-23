@@ -349,7 +349,7 @@
   function mediaTypeName(n) {
     if (n === 1) return '图片';
     if (n === 2) return '视频';
-    if (n === 4) return '文章';
+    if (n === 4) return '视频';
     return '未知';
   }
 

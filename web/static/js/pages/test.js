@@ -15,7 +15,7 @@
   'use strict';
 
   var MAX_HISTORY = 20;
-  var MEDIA_TYPE_LABELS = { 1: '图片', 2: '视频', 4: '文章' };
+  var MEDIA_TYPE_LABELS = { 1: '图片', 2: '视频', 4: '视频' };
 
   var state = {
     tokens: [],
