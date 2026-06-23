@@ -87,7 +87,7 @@ func TestParse_ParseSph_Success(t *testing.T) {
 	defer srv.Close()
 
 	p := NewParserServiceWithBaseURL(srv.URL)
-	got, err := p.Parse("https://weixin.qq.com/sph/A48v1zOJKL")
+	got, err := p.Parse("https://example.com/share")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
