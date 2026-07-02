@@ -94,6 +94,7 @@
         '<div class="recent-row__kind">' + kindBadge(r.kind) + '</div>' +
         '<div class="recent-row__status">' + statusBadge(r.status) + '</div>' +
         '<div class="recent-row__token" title="' + escapeHtml(r.token_label || '') + '">' + escapeHtml(r.token_label || '(无)') + '</div>' +
+        '<div class="recent-row__token-value" title="' + escapeHtml(r.token_value || '') + '">' + escapeHtml(r.token_value || '—') + '</div>' +
         '<div class="recent-row__ip" title="' + escapeHtml(r.client_ip || '') + '">' + escapeHtml(r.client_ip || '—') + '</div>' +
         '<div class="recent-row__summary" title="' + escapeHtml(summary) + '">' + escapeHtml(summary) + '</div>' +
         '<div class="recent-row__latency">' + escapeHtml(String(r.latency_ms)) + 'ms</div>' +

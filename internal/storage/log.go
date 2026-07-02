@@ -8,10 +8,16 @@ import (
 // RequestLog is one row in request_log. Request and Result are stored as JSON
 // strings in SQLite; we keep them as RawMessage here so callers can pass them
 // through without re-encoding.
+//
+// TokenLabel is the human-readable label of the matched token (empty for
+// failed auth, since no match was found). TokenValue is a masked snapshot of
+// the bearer the client actually sent — recorded even on 401 so admins can
+// trace which token was used in a rejected call. We never store the raw value.
 type RequestLog struct {
 	ID         int64           `json:"id"`
 	Ts         int64           `json:"ts"`
 	TokenLabel string          `json:"token_label"`
+	TokenValue string          `json:"token_value"`
 	Kind       string          `json:"kind"`    // 'url' | 'finder' | 'auth'
 	Source     string          `json:"source"`  // 'external' | 'admin_test'
 	ClientIP   string          `json:"client_ip"`

@@ -294,7 +294,8 @@
       '</div>' +
       '<div class="history-row__cell history-row__cell--ts">' + escapeHtml(fmtTs(r.ts)) + ' <span style="color:var(--text-faint)">' + escapeHtml(fmtDate(r.ts)) + '</span></div>' +
       '<div class="history-row__cell history-row__cell--kind">' + kindBadge(r.kind) + '</div>' +
-      '<div class="history-row__cell history-row__cell--token">' + escapeHtml(r.token_label || '(无)') + '</div>' +
+      '<div class="history-row__cell history-row__cell--token" title="' + escapeHtml(r.token_label || '') + '">' + escapeHtml(r.token_label || '(无)') + '</div>' +
+      '<div class="history-row__cell history-row__cell--token-value" title="' + escapeHtml(r.token_value || '') + '">' + escapeHtml(r.token_value || '—') + '</div>' +
       '<div class="history-row__cell history-row__cell--status" title="' + escapeHtml(r.msg || '') + '">' + statusInner + '</div>' +
       '<div class="history-row__cell history-row__cell--latency">' + escapeHtml(String(r.latency_ms)) + 'ms</div>' +
       '<div class="history-row__cell history-row__cell--source">' + sourceBadge(r.source) + '</div>' +
@@ -314,6 +315,15 @@
       sections.push('<div class="history-detail__section-title">来源 IP</div>');
       sections.push('<div class="kv__sub" style="font-family:var(--font-mono)">' + escapeHtml(r.client_ip) + '</div>');
     }
+    // Token 详情:Label + 已脱敏的 token 值(鉴权失败时仍会显示尝试传入的 token 前缀)
+    sections.push('<div class="history-detail__section-title">Token</div>');
+    var labelLine = '<div class="kv__sub" style="font-family:var(--font-mono)">' +
+      escapeHtml(r.token_label || '(无)') + '</div>';
+    if (r.token_value) {
+      labelLine += '<div class="kv__sub" style="font-family:var(--font-mono);color:var(--text-faint);margin-top:2px">' +
+        'value: ' + escapeHtml(r.token_value) + '</div>';
+    }
+    sections.push(labelLine);
     sections.push('<div class="history-detail__section-title">入参</div>');
     sections.push('<pre>' + escapeHtml(JSON.stringify(r.request, null, 2)) + '</pre>');
     if (r.msg) {

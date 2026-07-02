@@ -28,13 +28,15 @@ func TestLogAndQuery(t *testing.T) {
 	now := time.Now().UnixMilli()
 
 	rows := []RequestLog{
-		{Ts: now - 3000, TokenLabel: "alpha", Kind: "url", Source: "external", ClientIP: "127.0.0.1",
+		{Ts: now - 3000, TokenLabel: "alpha", TokenValue: "abcd1234...", Kind: "url", Source: "external", ClientIP: "127.0.0.1",
 			Request: json.RawMessage(`{"url":"https://a"}`), Status: 0, LatencyMs: 100, Msg: ""},
-		{Ts: now - 2000, TokenLabel: "alpha", Kind: "finder", Source: "admin_test", ClientIP: "::1",
+		{Ts: now - 2000, TokenLabel: "alpha", TokenValue: "abcd1234...", Kind: "finder", Source: "admin_test", ClientIP: "::1",
 			Request: json.RawMessage(`{"objectId":"x"}`), Status: 1, LatencyMs: 50, Msg: "fail"},
 		// 401 is always kind='auth' in this system (TokenAuth aborts before
 		// the handler runs). The request payload carries the attempted path.
-		{Ts: now - 1000, TokenLabel: "beta", Kind: "auth", Source: "external", ClientIP: "10.0.0.42",
+		// token_label is empty because no matched token, but token_value still
+		// records what the client tried to use (masked).
+		{Ts: now - 1000, TokenLabel: "", TokenValue: "deadbeef...", Kind: "auth", Source: "external", ClientIP: "10.0.0.42",
 			Request: json.RawMessage(`{"path":"POST /wx"}`), Status: 401, LatencyMs: 5, Msg: "token expired", Result: nil},
 	}
 	for i := range rows {
@@ -51,10 +53,20 @@ func TestLogAndQuery(t *testing.T) {
 	if p.Total != 3 {
 		t.Fatalf("total = %d, want 3", p.Total)
 	}
-	if p.Items[0].TokenLabel != "beta" {
-		t.Fatalf("newest row first: got %q", p.Items[0].TokenLabel)
+	// Newest row is the 401 auth row: label is empty (no match), but the
+	// masked token value must round-trip so admins can trace which secret
+	// was attempted.
+	if p.Items[0].TokenLabel != "" {
+		t.Fatalf("newest 401 row token_label should be empty, got %q", p.Items[0].TokenLabel)
 	}
-	// client_ip round-trips for each row (newest first: beta, alpha-finder, alpha-url)
+	if p.Items[0].TokenValue != "deadbeef..." {
+		t.Fatalf("newest 401 row token_value round-trip failed: got %q", p.Items[0].TokenValue)
+	}
+	// Second-newest is the alpha-finder row: its masked value should be intact.
+	if p.Items[1].TokenValue != "abcd1234..." {
+		t.Fatalf("alpha-finder token_value round-trip failed: got %q", p.Items[1].TokenValue)
+	}
+	// client_ip round-trips for each row (newest first: 401, alpha-finder, alpha-url)
 	wantIPs := []string{"10.0.0.42", "::1", "127.0.0.1"}
 	for i, want := range wantIPs {
 		if p.Items[i].ClientIP != want {
@@ -62,7 +74,7 @@ func TestLogAndQuery(t *testing.T) {
 		}
 	}
 
-	// filter by token_label
+	// filter by token_label (alpha still matches 2 rows even though 401 has empty label)
 	p, err = s.QueryHistory(HistoryQuery{Range: "all", Token: "alpha", Page: 1, Size: 50})
 	if err != nil {
 		t.Fatalf("QueryHistory token=alpha: %v", err)
@@ -81,6 +93,11 @@ func TestLogAndQuery(t *testing.T) {
 	}
 	if p.Items[0].Kind != "auth" {
 		t.Fatalf("auth_err row should be kind=auth, got %q", p.Items[0].Kind)
+	}
+	// The auth row's masked token value must be visible through the history API —
+	// this is the whole point of the field, including on 401 rows.
+	if p.Items[0].TokenValue != "deadbeef..." {
+		t.Fatalf("auth_err row token_value lost: got %q", p.Items[0].TokenValue)
 	}
 
 	// filter by text — match the path field of the auth row
@@ -214,6 +231,84 @@ func TestClientIPMigration(t *testing.T) {
 	}
 	if page.Total != 2 || page.Items[0].ClientIP != "192.168.1.5" {
 		t.Fatalf("post-migration insert: total=%d, top.ClientIP=%q", page.Total, page.Items[0].ClientIP)
+	}
+}
+
+// TestTokenValueMigration is the token_value counterpart of TestClientIPMigration:
+// a legacy DB that has client_ip but no token_value must migrate without
+// dropping data, backfilling the new column to ''. After migration, new
+// inserts must round-trip the masked token value through the history API.
+func TestTokenValueMigration(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+
+	// Create a "modern" table (already has client_ip) but no token_value.
+	{
+		legacy, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			t.Fatalf("open legacy: %v", err)
+		}
+		if _, err := legacy.Exec(`CREATE TABLE request_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			ts INTEGER NOT NULL,
+			token_label TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			source TEXT NOT NULL,
+			client_ip TEXT NOT NULL DEFAULT '',
+			request TEXT NOT NULL,
+			status INTEGER NOT NULL,
+			latency_ms INTEGER NOT NULL,
+			msg TEXT NOT NULL DEFAULT '',
+			result_data TEXT
+		)`); err != nil {
+			t.Fatalf("create legacy table: %v", err)
+		}
+		if _, err := legacy.Exec(
+			`INSERT INTO request_log (ts, token_label, kind, source, request, status, latency_ms, msg)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			time.Now().UnixMilli(), "legacy-token", "url", "external",
+			`{"url":"https://legacy"}`, 0, 12, ""); err != nil {
+			t.Fatalf("insert legacy row: %v", err)
+		}
+		_ = legacy.Close()
+	}
+
+	// Re-open via the production Init — should migrate, not lose data.
+	s := &Storage{}
+	if err := s.Init(dbPath); err != nil {
+		t.Fatalf("Init (post-migration): %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	page, err := s.QueryHistory(HistoryQuery{Range: "all", Page: 1, Size: 10})
+	if err != nil {
+		t.Fatalf("QueryHistory: %v", err)
+	}
+	if page.Total != 1 {
+		t.Fatalf("legacy row dropped during migration: total=%d", page.Total)
+	}
+	if page.Items[0].TokenLabel != "legacy-token" {
+		t.Fatalf("legacy row mangled: token=%q", page.Items[0].TokenLabel)
+	}
+	if page.Items[0].TokenValue != "" {
+		t.Fatalf("backfilled token_value should be empty, got %q", page.Items[0].TokenValue)
+	}
+
+	// New inserts round-trip the masked token value end-to-end.
+	if err := s.LogRequest(&RequestLog{
+		Ts: time.Now().UnixMilli(), TokenLabel: "new", TokenValue: "abcd1234...",
+		Kind: "url", Source: "external",
+		ClientIP: "192.168.1.5", Request: json.RawMessage(`{"url":"https://new"}`),
+		Status: 0, LatencyMs: 7, Msg: "",
+	}); err != nil {
+		t.Fatalf("LogRequest post-migration: %v", err)
+	}
+	page, err = s.QueryHistory(HistoryQuery{Range: "all", Page: 1, Size: 10})
+	if err != nil {
+		t.Fatalf("QueryHistory post-insert: %v", err)
+	}
+	if page.Total != 2 || page.Items[0].TokenValue != "abcd1234..." {
+		t.Fatalf("post-migration insert: total=%d, top.TokenValue=%q", page.Total, page.Items[0].TokenValue)
 	}
 }
 

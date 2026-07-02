@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS request_log (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   ts            INTEGER NOT NULL,
   token_label   TEXT    NOT NULL,
+  token_value   TEXT    NOT NULL DEFAULT '',
   kind          TEXT    NOT NULL,
   source        TEXT    NOT NULL,
   client_ip     TEXT    NOT NULL DEFAULT '',
@@ -20,6 +21,10 @@ CREATE TABLE IF NOT EXISTS request_log (
 // before client_ip was part of the schema. ALTER TABLE ADD COLUMN with a
 // NOT NULL DEFAULT '' is safe in SQLite and backfills existing rows to ''.
 const addColumnClientIP = `ALTER TABLE request_log ADD COLUMN client_ip TEXT NOT NULL DEFAULT ''`
+
+// addColumnTokenValue is issued for pre-existing databases that predate
+// the masked token_value column. Backfilled to ''.
+const addColumnTokenValue = `ALTER TABLE request_log ADD COLUMN token_value TEXT NOT NULL DEFAULT ''`
 
 const createIndexTs = `
 CREATE INDEX IF NOT EXISTS idx_request_log_ts
